@@ -1,0 +1,90 @@
+{% load static %}
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Create Ticket — MaintainX</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&family=Poppins:wght@600;700&display=swap" rel="stylesheet">
+  <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.5.1/css/all.min.css">
+  <link rel="stylesheet" href="{% static 'css/variables.css' %}">
+  <link rel="stylesheet" href="{% static 'css/base.css' %}">
+  <link rel="stylesheet" href="{% static 'css/components.css' %}">
+  <link rel="stylesheet" href="{% static 'css/layout.css' %}">
+  <script>(function(){var t=localStorage.getItem('maintainx-theme');if(t)document.documentElement.setAttribute('data-theme',t);})();</script>
+</head>
+<body>
+  <div class="app-layout">
+    <aside class="sidebar">
+      <div class="sidebar__header"><a href="{% url 'dashboard' %}" class="logo"><i class="fa-solid fa-wrench"></i> MaintainX</a></div>
+      <nav class="sidebar__nav">
+        <a href="{% url 'dashboard' %}" class="sidebar__link"><i class="fa-solid fa-gauge-high"></i> Dashboard</a>
+        <a href="{% url 'tickets' %}" class="sidebar__link"><i class="fa-solid fa-ticket"></i> Tickets</a>
+        <a href="{% url 'create_ticket' %}" class="sidebar__link is-active"><i class="fa-solid fa-plus"></i> Create Ticket</a>
+        <a href="{% url 'workers' %}" class="sidebar__link"><i class="fa-solid fa-users"></i> Workers</a>
+        <a href="{% url 'analytics' %}" class="sidebar__link"><i class="fa-solid fa-chart-line"></i> Analytics</a>
+        <a href="{% url 'settings' %}" class="sidebar__link"><i class="fa-solid fa-gear"></i> Settings</a>
+      </nav>
+      <div class="sidebar__footer"><a href="{% url 'logout' %}" class="sidebar__link"><i class="fa-solid fa-right-from-bracket"></i> Log out</a></div>
+    </aside>
+    <div class="sidebar-overlay"></div>
+    <div class="app-main">
+      <header class="topbar">
+        <div class="topbar__left">
+          <button class="btn btn--ghost btn--icon topbar__menu-btn" data-sidebar-toggle aria-label="Open menu"><i class="fa-solid fa-bars"></i></button>
+        </div>
+        <div class="topbar__right">
+          <button class="btn btn--ghost btn--icon theme-toggle" data-theme-toggle aria-label="Toggle theme"><i class="fa-solid fa-moon" data-theme-icon></i></button>
+        </div>
+      </header>
+      <main class="page-content">
+        <header class="page-header">
+          <div><h1>Create Ticket</h1><p>Submit a new maintenance work order</p></div>
+        </header>
+        <div class="card" style="max-width:800px">
+          <div class="card__body">
+            <form method="post" action="{% url 'create_ticket' %}">
+              {% csrf_token %}
+              <div class="form-row">
+                <div class="form-group">
+                  <label class="form-label" for="title">Title</label>
+                  <input type="text" name="title" id="title" class="form-input" placeholder="Brief description" required>
+                </div>
+                <div class="form-group">
+                  <label class="form-label" for="priority">Priority</label>
+                  <select name="priority" id="priority" class="form-select" required>
+                    <option value="low">Low</option>
+                    <option value="medium" selected>Medium</option>
+                    <option value="high">High</option>
+                    <option value="urgent">Urgent</option>
+                  </select>
+                </div>
+              </div>
+              <div class="form-group">
+                <label class="form-label" for="equipment">Equipment</label>
+                <select name="equipment" id="equipment" class="form-select" required>
+                  <option value="">Select Equipment</option>
+                  {% for eq in equipments %}
+                    <option value="{{ eq.id }}">{{ eq.name }} ({{ eq.serial_number }})</option>
+                  {% endfor %}
+                </select>
+              </div>
+              <div class="form-group">
+                <label class="form-label" for="description">Description</label>
+                <textarea name="description" id="description" class="form-textarea" rows="5" placeholder="Detailed issue description..." required></textarea>
+              </div>
+              <div style="display:flex;gap:1rem;justify-content:flex-end">
+                <a href="{% url 'tickets' %}" class="btn btn--secondary">Cancel</a>
+                <button type="submit" class="btn btn--primary">Create Ticket</button>
+              </div>
+            </form>
+          </div>
+        </div>
+      </main>
+    </div>
+  </div>
+  <script src="{% static 'js/main.js' %}"></script>
+</body>
+</html>

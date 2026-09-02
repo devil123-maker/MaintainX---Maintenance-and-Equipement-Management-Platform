@@ -1,0 +1,205 @@
+{% load static %}
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Dashboard — MaintainX</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&family=Poppins:wght@600;700&display=swap" rel="stylesheet">
+  <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.5.1/css/all.min.css">
+  <link rel="stylesheet" href="{% static 'css/variables.css' %}">
+  <link rel="stylesheet" href="{% static 'css/base.css' %}">
+  <link rel="stylesheet" href="{% static 'css/components.css' %}">
+  <link rel="stylesheet" href="{% static 'css/layout.css' %}">
+  <script>
+    (function(){var t=localStorage.getItem('maintainx-theme');if(t)document.documentElement.setAttribute('data-theme',t);})();
+  </script>
+</head>
+<body>
+  <div class="app-layout">
+    <aside class="sidebar">
+      <div class="sidebar__header">
+        <a href="{% url 'dashboard' %}" class="logo"><i class="fa-solid fa-wrench"></i> MaintainX</a>
+      </div>
+      <nav class="sidebar__nav">
+        <a href="{% url 'dashboard' %}" class="sidebar__link is-active"><i class="fa-solid fa-gauge-high"></i> Dashboard</a>
+        <a href="{% url 'tickets' %}" class="sidebar__link"><i class="fa-solid fa-ticket"></i> Tickets</a>
+        <a href="{% url 'create_ticket' %}" class="sidebar__link"><i class="fa-solid fa-plus"></i> Create Ticket</a>
+        <a href="{% url 'workers' %}" class="sidebar__link"><i class="fa-solid fa-users"></i> Workers</a>
+        <a href="{% url 'analytics' %}" class="sidebar__link"><i class="fa-solid fa-chart-line"></i> Analytics</a>
+        <a href="{% url 'settings' %}" class="sidebar__link"><i class="fa-solid fa-gear"></i> Settings</a>
+      </nav>
+      <div class="sidebar__footer">
+        <a href="{% url 'logout' %}" class="sidebar__link"><i class="fa-solid fa-right-from-bracket"></i> Log out</a>
+      </div>
+    </aside>
+    <div class="sidebar-overlay"></div>
+
+    <div class="app-main">
+      <header class="topbar">
+        <div class="topbar__left">
+          <button class="btn btn--ghost btn--icon topbar__menu-btn" data-sidebar-toggle aria-label="Open menu">
+            <i class="fa-solid fa-bars"></i>
+          </button>
+          <div class="topbar__search">
+            <div class="topbar__search-wrap">
+              <i class="fa-solid fa-magnifying-glass"></i>
+              <input type="search" class="form-input" placeholder="Search tickets, workers...">
+            </div>
+          </div>
+        </div>
+        <div class="topbar__right">
+          <button class="btn btn--ghost btn--icon theme-toggle" data-theme-toggle aria-label="Toggle theme">
+            <i class="fa-solid fa-moon" data-theme-icon></i>
+          </button>
+          <button class="topbar__icon-btn" aria-label="Notifications">
+            <i class="fa-solid fa-bell"></i>
+            <span class="topbar__badge-dot"></span>
+          </button>
+          <div class="dropdown">
+            <button class="topbar__user" data-dropdown-trigger>
+              <img src="https://i.pravatar.cc/72?u=admin" alt="" class="topbar__avatar" width="36" height="36">
+              <span>{% if user.is_authenticated %}{{ user.first_name|default:user.email }}{% else %}Alex Morgan{% endif %}</span>
+              <i class="fa-solid fa-chevron-down" style="font-size:0.75rem"></i>
+            </button>
+            <div class="dropdown__menu">
+              <a href="{% url 'settings' %}" class="dropdown__item"><i class="fa-solid fa-user"></i> Profile</a>
+              <a href="{% url 'settings' %}" class="dropdown__item"><i class="fa-solid fa-gear"></i> Settings</a>
+              <a href="{% url 'logout' %}" class="dropdown__item"><i class="fa-solid fa-right-from-bracket"></i> Log out</a>
+            </div>
+          </div>
+        </div>
+      </header>
+
+      <main class="page-content">
+        <header class="page-header">
+          <div>
+            <h1>Dashboard</h1>
+            <p>Overview of your maintenance operations</p>
+          </div>
+          <a href="{% url 'create_ticket' %}" class="btn btn--primary"><i class="fa-solid fa-plus"></i> New Ticket</a>
+        </header>
+
+        <div class="dashboard-grid">
+          <article class="card stat-card">
+            <div style="display:flex;justify-content:space-between;align-items:flex-start">
+              <div>
+                <span class="stat-card__label">Total Requests</span>
+                <span class="stat-card__value">{{ total_requests|default:0 }}</span>
+                <span class="stat-card__change stat-card__change--up"><i class="fa-solid fa-arrow-up"></i> Active system</span>
+              </div>
+              <span class="stat-card__icon stat-card__icon--primary"><i class="fa-solid fa-ticket"></i></span>
+            </div>
+          </article>
+          <article class="card stat-card">
+            <div style="display:flex;justify-content:space-between;align-items:flex-start">
+              <div>
+                <span class="stat-card__label">In Progress</span>
+                <span class="stat-card__value">{{ in_progress_requests|default:0 }}</span>
+                <span class="stat-card__change stat-card__change--warning"><i class="fa-solid fa-spinner"></i> In work</span>
+              </div>
+              <span class="stat-card__icon stat-card__icon--warning"><i class="fa-solid fa-spinner"></i></span>
+            </div>
+          </article>
+          <article class="card stat-card">
+            <div style="display:flex;justify-content:space-between;align-items:flex-start">
+              <div>
+                <span class="stat-card__label">Completed</span>
+                <span class="stat-card__value">{{ completed_requests|default:0 }}</span>
+                <span class="stat-card__change stat-card__change--up"><i class="fa-solid fa-circle-check"></i> Resolved</span>
+              </div>
+              <span class="stat-card__icon stat-card__icon--success"><i class="fa-solid fa-circle-check"></i></span>
+            </div>
+          </article>
+          <article class="card stat-card">
+            <div style="display:flex;justify-content:space-between;align-items:flex-start">
+              <div>
+                <span class="stat-card__label">Active Workers</span>
+                <span class="stat-card__value">{{ active_workers|default:0 }}</span>
+                <span class="stat-card__change"><i class="fa-solid fa-users"></i> Available</span>
+              </div>
+              <span class="stat-card__icon stat-card__icon--info"><i class="fa-solid fa-users"></i></span>
+            </div>
+          </article>
+        </div>
+
+        <div class="dashboard-grid dashboard-grid--2">
+          <section class="card">
+            <div class="card__header">
+              <h2 class="card__title">Recent Activity</h2>
+              <a href="{% url 'tickets' %}" class="btn btn--ghost btn--sm">View all</a>
+            </div>
+            <div class="card__body">
+              {% if recent_requests %}
+                {% for req in recent_requests %}
+                <div class="activity-item">
+                  <span class="activity-item__icon stat-card__icon--primary"><i class="fa-solid fa-ticket"></i></span>
+                  <div>
+                    <p class="activity-item__text"><strong>TKT-{{ req.id }}</strong>: {{ req.title }} — {{ req.equipment.name }}</p>
+                    <span class="activity-item__time">{{ req.created_at|timesince }} ago</span>
+                  </div>
+                </div>
+                {% endfor %}
+              {% else %}
+                <div class="activity-item">
+                  <span class="activity-item__icon stat-card__icon--info"><i class="fa-solid fa-info-circle"></i></span>
+                  <div>
+                    <p class="activity-item__text">No recent maintenance requests recorded yet.</p>
+                  </div>
+                </div>
+              {% endif %}
+            </div>
+          </section>
+
+          <section class="card">
+            <div class="card__header">
+              <h2 class="card__title">Priority Tickets</h2>
+            </div>
+            <div class="card__body" style="padding:0">
+              <div class="table-wrap" style="border:none">
+                <table class="data-table">
+                  <thead>
+                    <tr>
+                      <th>ID</th>
+                      <th>Subject</th>
+                      <th>Status</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {% if recent_requests %}
+                      {% for req in recent_requests %}
+                      <tr>
+                        <td>TKT-{{ req.id }}</td>
+                        <td>{{ req.title }}</td>
+                        <td>
+                          {% if req.status == 'pending' %}
+                            <span class="badge badge--open">Pending</span>
+                          {% elif req.status == 'in_progress' %}
+                            <span class="badge badge--progress">In Progress</span>
+                          {% elif req.status == 'completed' %}
+                            <span class="badge badge--resolved">Completed</span>
+                          {% else %}
+                            <span class="badge badge--urgent">{{ req.status|title }}</span>
+                          {% endif %}
+                        </td>
+                      </tr>
+                      {% endfor %}
+                    {% else %}
+                      <tr>
+                        <td colspan="3" style="text-align:center;padding:1rem">No tickets available</td>
+                      </tr>
+                    {% endif %}
+                  </tbody>
+                </table>
+              </div>
+            </div>
+          </section>
+        </div>
+      </main>
+    </div>
+  </div>
+  <script src="{% static 'js/main.js' %}"></script>
+</body>
+</html>

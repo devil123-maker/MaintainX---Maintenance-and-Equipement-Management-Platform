@@ -1,0 +1,135 @@
+{% load static %}
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>MaintainX — Enterprise Maintenance Management</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&family=Poppins:wght@600;700&display=swap" rel="stylesheet">
+  <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.5.1/css/all.min.css">
+  <link rel="stylesheet" href="{% static 'css/variables.css' %}">
+  <link rel="stylesheet" href="{% static 'css/base.css' %}">
+  <link rel="stylesheet" href="{% static 'css/components.css' %}">
+  <link rel="stylesheet" href="{% static 'css/layout.css' %}">
+  <script>
+    (function(){var t=localStorage.getItem('maintainx-theme');if(t)document.documentElement.setAttribute('data-theme',t);})();
+  </script>
+</head>
+<body>
+  <header class="landing-nav">
+    <div class="landing-nav__inner">
+      <a href="{% url 'dashboard' %}" class="logo">
+        <i class="fa-solid fa-wrench"></i>
+        MaintainX
+      </a>
+      <nav class="landing-nav__links">
+        <a href="#features">Features</a>
+        <a href="#pricing">Pricing</a>
+        <a href="#about">About</a>
+      </nav>
+      <div class="landing-nav__actions">
+        <button class="btn btn--ghost btn--icon theme-toggle" data-theme-toggle aria-label="Toggle theme">
+          <i class="fa-solid fa-moon" data-theme-icon></i>
+        </button>
+        <a href="{% url 'login' %}" class="btn btn--secondary">Log in</a>
+        <a href="{% url 'signup' %}" class="btn btn--primary">Get Started</a>
+        <button class="btn btn--ghost btn--icon landing-nav__toggle" data-nav-toggle aria-label="Menu">
+          <i class="fa-solid fa-bars"></i>
+        </button>
+      </div>
+    </div>
+  </header>
+
+  <main>
+    <section class="hero">
+      <div class="hero__inner">
+        <span class="hero__badge"><i class="fa-solid fa-sparkles"></i> Trusted by 2,000+ facilities</span>
+        <h1>Maintenance management, simplified</h1>
+        <p>Streamline work orders, track assets, and empower your team with an enterprise-grade platform built for modern operations.</p>
+        <div class="hero__actions">
+          <a href="login.html" class="btn btn--primary btn--lg">Start free trial</a>
+          <a href="#features" class="btn btn--secondary btn--lg">See features</a>
+        </div>
+        <div class="hero__visual">
+          <img src="https://images.unsplash.com/photo-1581091226825-a6a2a5aee158?w=1200&q=80" alt="Maintenance team reviewing dashboard on tablet" width="1200" height="675">
+        </div>
+      </div>
+    </section>
+
+    <section class="features" id="features">
+      <div class="features__header">
+        <h2>Everything you need to run maintenance</h2>
+        <p>Powerful tools designed for facility managers, technicians, and operations teams.</p>
+      </div>
+      <div class="features__grid">
+        <article class="card feature-card">
+          <div class="feature-card__icon"><i class="fa-solid fa-ticket"></i></div>
+          <h3>Smart ticketing</h3>
+          <p>Create, assign, and track work orders with priority levels, SLA tracking, and real-time status updates.</p>
+        </article>
+        <article class="card feature-card">
+          <div class="feature-card__icon"><i class="fa-solid fa-users"></i></div>
+          <h3>Workforce management</h3>
+          <p>View technician availability, skills, and workload at a glance. Assign the right person every time.</p>
+        </article>
+        <article class="card feature-card">
+          <div class="feature-card__icon"><i class="fa-solid fa-chart-line"></i></div>
+          <h3>Analytics & insights</h3>
+          <p>Monitor KPIs, resolution trends, and team efficiency with interactive dashboards and reports.</p>
+        </article>
+        <article class="card feature-card">
+          <div class="feature-card__icon"><i class="fa-solid fa-mobile-screen"></i></div>
+          <h3>Mobile-first</h3>
+          <p>Technicians update tickets from the field. Responsive design works on any device, any screen size.</p>
+        </article>
+        <article class="card feature-card">
+          <div class="feature-card__icon"><i class="fa-solid fa-bell"></i></div>
+          <h3>Smart notifications</h3>
+          <p>Stay informed with alerts for escalations, overdue tickets, and critical asset failures.</p>
+        </article>
+        <article class="card feature-card">
+          <div class="feature-card__icon"><i class="fa-solid fa-shield-halved"></i></div>
+          <h3>Enterprise security</h3>
+          <p>Role-based access, audit logs, and SSO-ready architecture for organizations of any size.</p>
+        </article>
+      </div>
+    </section>
+  </main>
+
+  <footer class="landing-footer" id="about">
+    <div class="landing-footer__grid">
+      <div>
+        <a href="index.html" class="logo" style="margin-bottom:1rem">
+          <i class="fa-solid fa-wrench"></i> MaintainX
+        </a>
+        <p>Modern maintenance management for forward-thinking teams.</p>
+      </div>
+      <div>
+        <h4>Product</h4>
+        <a href="#features">Features</a>
+        <a href="#">Integrations</a>
+      </div>
+      <div>
+        <h4>Company</h4>
+        <a href="#">About</a>
+        <a href="#">Careers</a>
+        <a href="#">Contact</a>
+      </div>
+      <div id="pricing">
+        <h4>Legal</h4>
+        <a href="#">Privacy</a>
+        <a href="#">Terms</a>
+        <a href="#">Security</a>
+      </div>
+    </div>
+    <div class="landing-footer__bottom">
+      <span>&copy; 2026 MaintainX. All rights reserved.</span>
+      <span>Built with HTML, CSS &amp; JavaScript</span>
+    </div>
+  </footer>
+
+  <script src="{% static 'js/main.js' %}"></script>
+</body>
+</html>
