@@ -28,8 +28,11 @@ class MaintenanceTeam(models.Model):
 class MaintenanceRequest(models.Model):
     STATUS_CHOICES = (
         ('pending', 'Pending'),
+        ('new', 'New'),
         ('in_progress', 'In Progress'),
         ('completed', 'Completed'),
+        ('repaired', 'Repaired'),
+        ('scrap', 'Scrap'),
         ('cancelled', 'Cancelled'),
     )
 
@@ -38,6 +41,11 @@ class MaintenanceRequest(models.Model):
         ('medium', 'Medium'),
         ('high', 'High'),
         ('urgent', 'Urgent'),
+    )
+
+    REQUEST_TYPE_CHOICES = (
+        ('corrective', 'Corrective'),
+        ('preventive', 'Preventive'),
     )
 
     title = models.CharField(max_length=200)
@@ -60,10 +68,28 @@ class MaintenanceRequest(models.Model):
         blank=True,
         related_name='assigned_requests'
     )
+    assigned_technician = models.ForeignKey(
+        settings.AUTH_USER_MODEL,
+        on_delete=models.SET_NULL,
+        null=True,
+        blank=True,
+        related_name='assigned_maintenance_requests'
+    )
+    request_type = models.CharField(
+        max_length=20,
+        choices=REQUEST_TYPE_CHOICES,
+        default='corrective'
+    )
     status = models.CharField(max_length=20, choices=STATUS_CHOICES, default='pending')
     priority = models.CharField(max_length=20, choices=PRIORITY_CHOICES, default='medium')
     scheduled_date = models.DateField(null=True, blank=True)
     completed_date = models.DateField(null=True, blank=True)
+    duration_hours = models.DecimalField(
+        max_digits=5,
+        decimal_places=2,
+        null=True,
+        blank=True
+    )
     created_at = models.DateTimeField(auto_now_add=True)
     updated_at = models.DateTimeField(auto_now=True)
 

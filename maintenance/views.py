@@ -1,4 +1,4 @@
-from django.shortcuts import render, get_object_or_404
+from django.shortcuts import render, get_object_or_404, redirect
 from django.http import JsonResponse
 from django.contrib.auth.decorators import login_required
 from django.views.decorators.http import require_http_methods
@@ -114,6 +114,7 @@ def request_list(request):
     if request.method == 'GET':
         status_filter = request.GET.get('status')
         priority_filter = request.GET.get('priority')
+        type_filter = request.GET.get('request_type')
         my_requests = request.GET.get('my_requests')
         
         requests = MaintenanceRequest.objects.all()
@@ -122,6 +123,8 @@ def request_list(request):
             requests = requests.filter(status=status_filter)
         if priority_filter:
             requests = requests.filter(priority=priority_filter)
+        if type_filter:
+            requests = requests.filter(request_type=type_filter)
         if my_requests:
             requests = requests.filter(requested_by=request.user)
         
@@ -130,10 +133,14 @@ def request_list(request):
             'title': req.title,
             'status': req.status,
             'priority': req.priority,
+            'request_type': req.request_type,
             'equipment_name': req.equipment.name,
             'equipment_serial': req.equipment.serial_number,
             'requested_by_name': req.requested_by.first_name if req.requested_by else '',
             'team_name': req.assigned_team.name if req.assigned_team else '',
+            'assigned_technician': req.assigned_technician.id if req.assigned_technician else None,
+            'assigned_technician_name': req.assigned_technician.first_name if req.assigned_technician else '',
+            'duration_hours': float(req.duration_hours) if req.duration_hours is not None else None,
             'scheduled_date': req.scheduled_date,
             'created_at': req.created_at
         } for req in requests]
@@ -147,7 +154,10 @@ def request_list(request):
             equipment_id=data['equipment'],
             requested_by=request.user,
             priority=data.get('priority', 'medium'),
+            request_type=data.get('request_type', 'corrective'),
             scheduled_date=data.get('scheduled_date'),
+            duration_hours=data.get('duration_hours'),
+            assigned_technician_id=data.get('assigned_technician'),
             status='pending'
         )
         if data.get('assigned_team'):
@@ -170,6 +180,7 @@ def request_detail(request, pk):
             'id': maintenance_request.id,
             'title': maintenance_request.title,
             'description': maintenance_request.description,
+            'request_type': maintenance_request.request_type,
             'equipment': maintenance_request.equipment.id,
             'equipment_details': {
                 'id': maintenance_request.equipment.id,
@@ -188,8 +199,15 @@ def request_detail(request, pk):
                 'id': maintenance_request.assigned_team.id,
                 'name': maintenance_request.assigned_team.name
             } if maintenance_request.assigned_team else None,
+            'assigned_technician': maintenance_request.assigned_technician.id if maintenance_request.assigned_technician else None,
+            'assigned_technician_details': {
+                'id': maintenance_request.assigned_technician.id,
+                'first_name': maintenance_request.assigned_technician.first_name,
+                'email': maintenance_request.assigned_technician.email
+            } if maintenance_request.assigned_technician else None,
             'status': maintenance_request.status,
             'priority': maintenance_request.priority,
+            'duration_hours': float(maintenance_request.duration_hours) if maintenance_request.duration_hours is not None else None,
             'scheduled_date': maintenance_request.scheduled_date,
             'completed_date': maintenance_request.completed_date,
             'created_at': maintenance_request.created_at,
@@ -202,10 +220,14 @@ def request_detail(request, pk):
         maintenance_request.title = data.get('title', maintenance_request.title)
         maintenance_request.description = data.get('description', maintenance_request.description)
         maintenance_request.priority = data.get('priority', maintenance_request.priority)
+        maintenance_request.request_type = data.get('request_type', maintenance_request.request_type)
         maintenance_request.scheduled_date = data.get('scheduled_date', maintenance_request.scheduled_date)
-        if data.get('assigned_team'):
+        maintenance_request.duration_hours = data.get('duration_hours', maintenance_request.duration_hours)
+        if 'assigned_team' in data:
             maintenance_request.assigned_team_id = data['assigned_team']
-        if data.get('status'):
+        if 'assigned_technician' in data:
+            maintenance_request.assigned_technician_id = data['assigned_technician']
+        if 'status' in data:
             maintenance_request.status = data['status']
         maintenance_request.save()
         return JsonResponse({'message': 'Request updated successfully'})
@@ -330,9 +352,9 @@ def dashboard(request):
         
         # Maintenance request statistics
         total_requests = MaintenanceRequest.objects.count()
-        pending_requests = MaintenanceRequest.objects.filter(status='pending').count()
+        pending_requests = MaintenanceRequest.objects.filter(status__in=['pending', 'new']).count()
         in_progress_requests = MaintenanceRequest.objects.filter(status='in_progress').count()
-        completed_requests = MaintenanceRequest.objects.filter(status='completed').count()
+        completed_requests = MaintenanceRequest.objects.filter(status__in=['completed', 'repaired']).count()
         
         # Team & Worker statistics
         total_teams = MaintenanceTeam.objects.count()
@@ -345,6 +367,7 @@ def dashboard(request):
             'title': req.title,
             'status': req.status,
             'priority': req.priority,
+            'request_type': req.request_type,
             'equipment_name': req.equipment.name,
             'equipment_serial': req.equipment.serial_number,
             'requested_by_name': req.requested_by.first_name if req.requested_by else (req.requested_by.email if req.requested_by else ''),
@@ -356,13 +379,14 @@ def dashboard(request):
         # Urgent requests
         urgent_requests = MaintenanceRequest.objects.filter(
             priority='urgent', 
-            status__in=['pending', 'in_progress']
+            status__in=['pending', 'new', 'in_progress']
         )
         urgent_data = [{
             'id': req.id,
             'title': req.title,
             'status': req.status,
             'priority': req.priority,
+            'request_type': req.request_type,
             'equipment_name': req.equipment.name,
             'equipment_serial': req.equipment.serial_number,
             'requested_by_name': req.requested_by.first_name if req.requested_by else (req.requested_by.email if req.requested_by else ''),
@@ -420,6 +444,11 @@ def create_ticket_view(request):
         description = request.POST.get('description')
         equipment_id = request.POST.get('equipment')
         priority = request.POST.get('priority', 'medium')
+        request_type = request.POST.get('request_type', 'corrective')
+        scheduled_date = request.POST.get('scheduled_date')
+        assigned_team_id = request.POST.get('assigned_team')
+        assigned_technician_id = request.POST.get('assigned_technician')
+        duration_hours = request.POST.get('duration_hours')
         
         if title and description and equipment_id:
             MaintenanceRequest.objects.create(
@@ -427,12 +456,23 @@ def create_ticket_view(request):
                 description=description,
                 equipment_id=equipment_id,
                 requested_by=request.user,
-                priority=priority
+                priority=priority,
+                request_type=request_type,
+                scheduled_date=scheduled_date if scheduled_date else None,
+                assigned_team_id=assigned_team_id if assigned_team_id else None,
+                assigned_technician_id=assigned_technician_id if assigned_technician_id else None,
+                duration_hours=duration_hours if duration_hours else None
             )
             return redirect('tickets')
             
     equipments = Equipment.objects.all()
-    return render(request, 'create-ticket.html', {'equipments': equipments})
+    teams = MaintenanceTeam.objects.all()
+    technicians = User.objects.filter(user_type='technician')
+    return render(request, 'create-ticket.html', {
+        'equipments': equipments,
+        'teams': teams,
+        'technicians': technicians
+    })
 
 
 @login_required
