@@ -240,3 +240,42 @@ class MaintenanceTests(TestCase):
             scheduled_date=future_date
         )
         self.assertFalse(req_future.is_overdue)
+
+    def test_kanban_view_render(self):
+        response = self.client.get(reverse('tickets'))
+        self.assertEqual(response.status_code, 200)
+        self.assertContains(response, 'kanban-board')
+        self.assertContains(response, 'kanban-column')
+
+    def test_kanban_status_update_api_success(self):
+        response = self.client.put(
+            reverse('request_detail', kwargs={'pk': self.request.pk}),
+            data=json.dumps({'status': 'in_progress'}),
+            content_type='application/json'
+        )
+        self.assertEqual(response.status_code, 200)
+        self.request.refresh_from_db()
+        self.assertEqual(self.request.status, 'in_progress')
+
+    def test_kanban_status_update_api_rejection(self):
+        self.request.status = 'repaired'
+        self.request.save()
+
+        response = self.client.put(
+            reverse('request_detail', kwargs={'pk': self.request.pk}),
+            data=json.dumps({'status': 'in_progress'}),
+            content_type='application/json'
+        )
+        self.assertEqual(response.status_code, 400)
+        self.request.refresh_from_db()
+        self.assertEqual(self.request.status, 'repaired')
+
+    def test_kanban_scrap_status_update_triggers_equipment_scrapped(self):
+        response = self.client.put(
+            reverse('request_detail', kwargs={'pk': self.request.pk}),
+            data=json.dumps({'status': 'scrap'}),
+            content_type='application/json'
+        )
+        self.assertEqual(response.status_code, 200)
+        self.equipment.refresh_from_db()
+        self.assertEqual(self.equipment.status, 'scrapped')
