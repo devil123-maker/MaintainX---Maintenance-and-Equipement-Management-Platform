@@ -255,6 +255,226 @@
     });
   }
 
+  function showToast(message) {
+    let existing = document.querySelector(".toast-notification");
+    if (existing) existing.remove();
+
+    const toast = document.createElement("div");
+    toast.className = "toast-notification";
+    toast.innerHTML = `<i class="fa-solid fa-triangle-exclamation"></i> <span>${message}</span>`;
+    document.body.appendChild(toast);
+
+    setTimeout(() => {
+      toast.style.transition = "opacity 0.4s ease-out, transform 0.4s ease-out";
+      toast.style.opacity = "0";
+      toast.style.transform = "translateY(100%)";
+      setTimeout(() => toast.remove(), 400);
+    }, 4000);
+  }
+
+  function getCsrfToken() {
+    const input = document.querySelector("[name=csrfmiddlewaretoken]");
+    if (input) return input.value;
+    const cookie = document.cookie.split("; ").find((row) => row.startsWith("csrftoken="));
+    return cookie ? cookie.split("=")[1] : "";
+  }
+
+  function updateColumnCounts() {
+    const columns = ["new", "in_progress", "repaired", "scrap"];
+    columns.forEach((status) => {
+      const dropZone = document.querySelector(`[data-status-drop="${status}"]`);
+      const countEl = document.querySelector(`[data-col-count="${status}"]`);
+      if (!dropZone) return;
+
+      const cards = dropZone.querySelectorAll(".kanban-card");
+      if (countEl) countEl.textContent = cards.length;
+
+      let emptyState = dropZone.querySelector(".kanban-empty");
+      if (cards.length === 0) {
+        if (!emptyState) {
+          emptyState = document.createElement("div");
+          emptyState.className = "kanban-empty";
+          emptyState.textContent = "No requests";
+          dropZone.appendChild(emptyState);
+        }
+      } else {
+        if (emptyState) emptyState.remove();
+      }
+    });
+  }
+
+  function initViewSwitcher() {
+    const switcher = id("view-switcher") || document.getElementById("view-switcher");
+    const tableView = document.getElementById("table-view");
+    const kanbanView = document.getElementById("kanban-view");
+    if (!switcher || !tableView || !kanbanView) return;
+
+    function id(s) { return document.getElementById(s); }
+
+    const buttons = switcher.querySelectorAll("[data-view-target]");
+    const savedView = localStorage.getItem("maintainx-view-mode") || "table";
+
+    function setView(target) {
+      buttons.forEach((btn) => {
+        const isTarget = btn.getAttribute("data-view-target") === target;
+        btn.classList.toggle("is-active", isTarget);
+      });
+      if (target === "kanban") {
+        tableView.style.display = "none";
+        kanbanView.style.display = "grid";
+        updateColumnCounts();
+      } else {
+        kanbanView.style.display = "none";
+        tableView.style.display = "block";
+      }
+      localStorage.setItem("maintainx-view-mode", target);
+    }
+
+    buttons.forEach((btn) => {
+      btn.addEventListener("click", () => {
+        const target = btn.getAttribute("data-view-target");
+        setView(target);
+      });
+    });
+
+    if (savedView === "kanban") {
+      setView("kanban");
+    } else {
+      updateColumnCounts();
+    }
+  }
+
+  async function updateTicketStatus(ticketId, newStatus) {
+    const response = await fetch(`/requests/${ticketId}/`, {
+      method: "PUT",
+      headers: {
+        "Content-Type": "application/json",
+        "X-CSRFToken": getCsrfToken(),
+      },
+      body: JSON.stringify({ status: newStatus }),
+    });
+
+    const data = await response.json();
+    if (!response.ok) {
+      let msg = "Unable to update status.";
+      if (typeof data.error === "string") {
+        msg = data.error;
+      } else if (typeof data.error === "object") {
+        msg = Object.values(data.error).flat().join(" ");
+      }
+      throw new Error(msg);
+    }
+    return data;
+  }
+
+  function initKanbanDragAndDrop() {
+    let draggedCard = null;
+    let sourceStatus = null;
+
+    document.addEventListener("dragstart", (e) => {
+      const card = e.target.closest(".kanban-card");
+      if (!card) return;
+
+      draggedCard = card;
+      sourceStatus = card.getAttribute("data-status");
+      card.classList.add("is-dragging");
+      e.dataTransfer.effectAllowed = "move";
+      e.dataTransfer.setData("text/plain", card.getAttribute("data-ticket-id"));
+    });
+
+    document.addEventListener("dragend", (e) => {
+      const card = e.target.closest(".kanban-card");
+      if (card) card.classList.remove("is-dragging");
+      document.querySelectorAll(".kanban-column__body").forEach((col) => col.classList.remove("is-dragover"));
+      draggedCard = null;
+      sourceStatus = null;
+    });
+
+    document.querySelectorAll("[data-status-drop]").forEach((dropZone) => {
+      dropZone.addEventListener("dragover", (e) => {
+        e.preventDefault();
+        e.dataTransfer.dropEffect = "move";
+        dropZone.classList.add("is-dragover");
+      });
+
+      dropZone.addEventListener("dragleave", (e) => {
+        if (!dropZone.contains(e.relatedTarget)) {
+          dropZone.classList.remove("is-dragover");
+        }
+      });
+
+      dropZone.addEventListener("drop", async (e) => {
+        e.preventDefault();
+        dropZone.classList.remove("is-dragover");
+        if (!draggedCard) return;
+
+        const targetStatus = dropZone.getAttribute("data-status-drop");
+        const ticketId = draggedCard.getAttribute("data-ticket-id");
+
+        if (targetStatus === sourceStatus) return;
+
+        const originalParent = draggedCard.parentElement;
+        const originalNextSibling = draggedCard.nextSibling;
+
+        // Optimistically move card
+        dropZone.appendChild(draggedCard);
+        updateColumnCounts();
+
+        try {
+          await updateTicketStatus(ticketId, targetStatus);
+          draggedCard.setAttribute("data-status", targetStatus);
+
+          // Update quick select in card
+          const select = draggedCard.querySelector("[data-card-status-select]");
+          if (select) select.value = targetStatus;
+
+          // Update table row if present
+          const row = document.querySelector(`tr[data-ticket-id="${ticketId}"]`);
+          if (row) row.setAttribute("data-status", targetStatus);
+
+        } catch (err) {
+          // Revert move on failure
+          if (originalNextSibling) {
+            originalParent.insertBefore(draggedCard, originalNextSibling);
+          } else {
+            originalParent.appendChild(draggedCard);
+          }
+          updateColumnCounts();
+          showToast(err.message || "Failed to update ticket status");
+        }
+      });
+    });
+  }
+
+  function initQuickStatusSelect() {
+    document.addEventListener("change", async (e) => {
+      const select = e.target.closest("[data-card-status-select]");
+      if (!select) return;
+
+      const ticketId = select.getAttribute("data-ticket-id");
+      const newStatus = select.value;
+      const card = select.closest(".kanban-card");
+      const oldStatus = card ? card.getAttribute("data-status") : select.defaultValue;
+
+      if (newStatus === oldStatus) return;
+
+      try {
+        await updateTicketStatus(ticketId, newStatus);
+        if (card) {
+          card.setAttribute("data-status", newStatus);
+          const targetZone = document.querySelector(`[data-status-drop="${newStatus}"]`);
+          if (targetZone) {
+            targetZone.appendChild(card);
+            updateColumnCounts();
+          }
+        }
+      } catch (err) {
+        select.value = oldStatus;
+        showToast(err.message || "Failed to update ticket status");
+      }
+    });
+  }
+
   document.addEventListener("DOMContentLoaded", () => {
     initTheme();
     initThemeToggles();
@@ -267,5 +487,8 @@
     initFormValidation();
     initToggleButtons();
     initPasswordToggles();
+    initViewSwitcher();
+    initKanbanDragAndDrop();
+    initQuickStatusSelect();
   });
 })();

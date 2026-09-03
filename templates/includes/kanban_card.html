@@ -1,0 +1,49 @@
+<div class="kanban-card" draggable="true" data-ticket-card data-ticket-id="{{ req.id }}" data-status="{{ req.status }}">
+  <div class="kanban-card__header">
+    <span class="kanban-card__id">TKT-{{ req.id }}</span>
+    <span class="badge badge--{{ req.priority }}">{{ req.priority|title }}</span>
+  </div>
+  <div class="kanban-card__title">{{ req.title }}</div>
+  <div class="kanban-card__meta">
+    <div class="kanban-card__meta-item">
+      <i class="fa-solid fa-screwdriver-wrench"></i>
+      <span>Type: <strong>{{ req.get_request_type_display|default:req.request_type|title }}</strong></span>
+    </div>
+    <div class="kanban-card__meta-item">
+      <i class="fa-solid fa-cubes"></i>
+      <span>{{ req.equipment.name }}</span>
+    </div>
+    <div class="kanban-card__meta-item">
+      <i class="fa-solid fa-user-gear"></i>
+      <span>
+        {% if req.assigned_technician %}
+          {{ req.assigned_technician.get_full_name|default:req.assigned_technician.username }}
+        {% elif req.assigned_team %}
+          {{ req.assigned_team.name }}
+        {% else %}
+          Unassigned
+        {% endif %}
+      </span>
+    </div>
+    {% if req.scheduled_date %}
+      <div class="kanban-card__meta-item">
+        <i class="fa-regular fa-calendar"></i>
+        <span>Scheduled: {{ req.scheduled_date|date:"d M Y" }}</span>
+      </div>
+    {% endif %}
+    {% if req.is_overdue %}
+      <div class="kanban-card__meta-item" style="margin-top:0.25rem;">
+        <span class="badge badge--overdue"><i class="fa-solid fa-triangle-exclamation"></i> Overdue</span>
+      </div>
+    {% endif %}
+  </div>
+  <div class="kanban-card__footer">
+    <span class="badge badge--ghost" style="font-size:0.75rem;">Status</span>
+    <select class="quick-status-select" data-card-status-select data-ticket-id="{{ req.id }}">
+      <option value="pending" {% if req.status == 'pending' or req.status == 'new' %}selected{% endif %}>New</option>
+      <option value="in_progress" {% if req.status == 'in_progress' %}selected{% endif %}>In Progress</option>
+      <option value="repaired" {% if req.status == 'repaired' or req.status == 'completed' %}selected{% endif %}>Repaired</option>
+      <option value="scrap" {% if req.status == 'scrap' %}selected{% endif %}>Scrap</option>
+    </select>
+  </div>
+</div>

@@ -41,22 +41,37 @@
       </header>
       <main class="page-content">
         <header class="page-header">
-          <div><h1>Tickets</h1><p>Manage and track all maintenance work orders</p></div>
-          <a href="{% url 'create_ticket' %}" class="btn btn--primary"><i class="fa-solid fa-plus"></i> New Ticket</a>
+          <div>
+            <h1>Tickets & Maintenance Workflow</h1>
+            <p>Manage, track, and drag-and-drop maintenance work orders</p>
+          </div>
+          <div style="display:flex;gap:0.75rem;align-items:center;">
+            <div class="view-switcher" id="view-switcher">
+              <button type="button" class="view-btn is-active" data-view-target="table"><i class="fa-solid fa-list"></i> Table</button>
+              <button type="button" class="view-btn" data-view-target="kanban"><i class="fa-solid fa-table-columns"></i> Kanban</button>
+            </div>
+            <a href="{% url 'create_ticket' %}" class="btn btn--primary"><i class="fa-solid fa-plus"></i> New Ticket</a>
+          </div>
         </header>
+
+        {% csrf_token %}
+
         <div class="filter-bar">
           <div class="search-input-wrap">
             <i class="fa-solid fa-magnifying-glass"></i>
-            <input type="search" id="ticket-search" class="form-input" placeholder="Search tickets...">
+            <input type="search" id="ticket-search" class="form-input" placeholder="Search tickets by title, equipment, technician...">
           </div>
           <select id="ticket-status-filter" class="form-select">
             <option value="all">All statuses</option>
-            <option value="pending">Pending</option>
+            <option value="pending">Pending / New</option>
             <option value="in_progress">In Progress</option>
-            <option value="completed">Completed</option>
+            <option value="completed">Repaired / Completed</option>
+            <option value="scrap">Scrap</option>
           </select>
         </div>
-        <div class="table-wrap">
+
+        <!-- Table View Container -->
+        <div id="table-view" class="table-wrap">
           <table class="data-table">
             <thead>
               <tr><th>ID</th><th>Subject</th><th>Type</th><th>Equipment</th><th>Team / Tech</th><th>Priority</th><th>Status</th></tr>
@@ -64,9 +79,14 @@
             <tbody>
               {% if requests %}
                 {% for req in requests %}
-                <tr data-ticket-row data-status="{{ req.status }}">
+                <tr data-ticket-row data-status="{{ req.status }}" data-ticket-id="{{ req.id }}">
                   <td>TKT-{{ req.id }}</td>
-                  <td>{{ req.title }}</td>
+                  <td>
+                    {{ req.title }}
+                    {% if req.is_overdue %}
+                      <span class="badge badge--overdue" style="font-size:0.7rem;margin-left:0.3rem;"><i class="fa-solid fa-triangle-exclamation"></i> Overdue</span>
+                    {% endif %}
+                  </td>
                   <td><span class="badge badge--ghost">{{ req.get_request_type_display|default:req.request_type|title }}</span></td>
                   <td>{{ req.equipment.name }}</td>
                   <td>
@@ -100,6 +120,70 @@
             </tbody>
           </table>
         </div>
+
+        <!-- Kanban View Container -->
+        <div id="kanban-view" class="kanban-board" style="display:none;">
+          <!-- NEW Column -->
+          <div class="kanban-column" data-status-column="new">
+            <div class="kanban-column__header">
+              <div class="kanban-column__title"><i class="fa-solid fa-circle-dot" style="color:#3b82f6;"></i> New</div>
+              <span class="kanban-column__count" data-col-count="new">0</span>
+            </div>
+            <div class="kanban-column__body" data-status-drop="new">
+              {% for req in requests %}
+                {% if req.status == 'new' or req.status == 'pending' %}
+                  {% include 'includes/kanban_card.html' with req=req %}
+                {% endif %}
+              {% endfor %}
+            </div>
+          </div>
+
+          <!-- IN PROGRESS Column -->
+          <div class="kanban-column" data-status-column="in_progress">
+            <div class="kanban-column__header">
+              <div class="kanban-column__title"><i class="fa-solid fa-spinner" style="color:#eab308;"></i> In Progress</div>
+              <span class="kanban-column__count" data-col-count="in_progress">0</span>
+            </div>
+            <div class="kanban-column__body" data-status-drop="in_progress">
+              {% for req in requests %}
+                {% if req.status == 'in_progress' %}
+                  {% include 'includes/kanban_card.html' with req=req %}
+                {% endif %}
+              {% endfor %}
+            </div>
+          </div>
+
+          <!-- REPAIRED Column -->
+          <div class="kanban-column" data-status-column="repaired">
+            <div class="kanban-column__header">
+              <div class="kanban-column__title"><i class="fa-solid fa-circle-check" style="color:#22c55e;"></i> Repaired</div>
+              <span class="kanban-column__count" data-col-count="repaired">0</span>
+            </div>
+            <div class="kanban-column__body" data-status-drop="repaired">
+              {% for req in requests %}
+                {% if req.status == 'repaired' or req.status == 'completed' %}
+                  {% include 'includes/kanban_card.html' with req=req %}
+                {% endif %}
+              {% endfor %}
+            </div>
+          </div>
+
+          <!-- SCRAP Column -->
+          <div class="kanban-column" data-status-column="scrap">
+            <div class="kanban-column__header">
+              <div class="kanban-column__title"><i class="fa-solid fa-trash-can" style="color:#ef4444;"></i> Scrap</div>
+              <span class="kanban-column__count" data-col-count="scrap">0</span>
+            </div>
+            <div class="kanban-column__body" data-status-drop="scrap">
+              {% for req in requests %}
+                {% if req.status == 'scrap' %}
+                  {% include 'includes/kanban_card.html' with req=req %}
+                {% endif %}
+              {% endfor %}
+            </div>
+          </div>
+        </div>
+      </main>
       </main>
     </div>
   </div>
