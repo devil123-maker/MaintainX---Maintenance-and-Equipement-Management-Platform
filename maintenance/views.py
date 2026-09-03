@@ -2,6 +2,7 @@ from django.shortcuts import render, get_object_or_404, redirect
 from django.http import JsonResponse
 from django.contrib.auth.decorators import login_required
 from django.views.decorators.http import require_http_methods
+from django.core.exceptions import ValidationError
 import json
 from django.utils import timezone
 from .models import MaintenanceTeam, MaintenanceRequest, MaintenanceHistory
@@ -148,27 +149,30 @@ def request_list(request):
     
     elif request.method == 'POST':
         data = json.loads(request.body)
-        maintenance_request = MaintenanceRequest.objects.create(
-            title=data['title'],
-            description=data['description'],
-            equipment_id=data['equipment'],
-            requested_by=request.user,
-            priority=data.get('priority', 'medium'),
-            request_type=data.get('request_type', 'corrective'),
-            scheduled_date=data.get('scheduled_date'),
-            duration_hours=data.get('duration_hours'),
-            assigned_technician_id=data.get('assigned_technician'),
-            status='pending'
-        )
-        if data.get('assigned_team'):
-            maintenance_request.assigned_team_id = data['assigned_team']
-            maintenance_request.status = 'in_progress'
+        try:
+            maintenance_request = MaintenanceRequest(
+                title=data['title'],
+                description=data['description'],
+                equipment_id=data['equipment'],
+                requested_by=request.user,
+                priority=data.get('priority', 'medium'),
+                request_type=data.get('request_type', 'corrective'),
+                scheduled_date=data.get('scheduled_date'),
+                duration_hours=data.get('duration_hours'),
+                assigned_technician_id=data.get('assigned_technician'),
+                status='pending'
+            )
+            if data.get('assigned_team'):
+                maintenance_request.assigned_team_id = data['assigned_team']
+                maintenance_request.status = 'in_progress'
             maintenance_request.save()
-        return JsonResponse({
-            'id': maintenance_request.id,
-            'title': maintenance_request.title,
-            'status': maintenance_request.status
-        }, status=201)
+            return JsonResponse({
+                'id': maintenance_request.id,
+                'title': maintenance_request.title,
+                'status': maintenance_request.status
+            }, status=201)
+        except ValidationError as e:
+            return JsonResponse({'error': e.message_dict if hasattr(e, 'message_dict') else str(e)}, status=400)
 
 
 @login_required
@@ -217,20 +221,23 @@ def request_detail(request, pk):
     
     elif request.method == 'PUT':
         data = json.loads(request.body)
-        maintenance_request.title = data.get('title', maintenance_request.title)
-        maintenance_request.description = data.get('description', maintenance_request.description)
-        maintenance_request.priority = data.get('priority', maintenance_request.priority)
-        maintenance_request.request_type = data.get('request_type', maintenance_request.request_type)
-        maintenance_request.scheduled_date = data.get('scheduled_date', maintenance_request.scheduled_date)
-        maintenance_request.duration_hours = data.get('duration_hours', maintenance_request.duration_hours)
-        if 'assigned_team' in data:
-            maintenance_request.assigned_team_id = data['assigned_team']
-        if 'assigned_technician' in data:
-            maintenance_request.assigned_technician_id = data['assigned_technician']
-        if 'status' in data:
-            maintenance_request.status = data['status']
-        maintenance_request.save()
-        return JsonResponse({'message': 'Request updated successfully'})
+        try:
+            maintenance_request.title = data.get('title', maintenance_request.title)
+            maintenance_request.description = data.get('description', maintenance_request.description)
+            maintenance_request.priority = data.get('priority', maintenance_request.priority)
+            maintenance_request.request_type = data.get('request_type', maintenance_request.request_type)
+            maintenance_request.scheduled_date = data.get('scheduled_date', maintenance_request.scheduled_date)
+            maintenance_request.duration_hours = data.get('duration_hours', maintenance_request.duration_hours)
+            if 'assigned_team' in data:
+                maintenance_request.assigned_team_id = data['assigned_team']
+            if 'assigned_technician' in data:
+                maintenance_request.assigned_technician_id = data['assigned_technician']
+            if 'status' in data:
+                maintenance_request.status = data['status']
+            maintenance_request.save()
+            return JsonResponse({'message': 'Request updated successfully'})
+        except ValidationError as e:
+            return JsonResponse({'error': e.message_dict if hasattr(e, 'message_dict') else str(e)}, status=400)
     
     elif request.method == 'DELETE':
         maintenance_request.delete()
@@ -251,6 +258,8 @@ def request_assign_team(request, pk):
             return JsonResponse({'message': 'Team assigned successfully'})
         except MaintenanceTeam.DoesNotExist:
             return JsonResponse({'error': 'Team not found'}, status=404)
+        except ValidationError as e:
+            return JsonResponse({'error': e.message_dict if hasattr(e, 'message_dict') else str(e)}, status=400)
 
 
 @login_required
@@ -258,19 +267,22 @@ def request_complete(request, pk):
     maintenance_request = get_object_or_404(MaintenanceRequest, pk=pk)
     if request.method == 'POST':
         data = json.loads(request.body)
-        maintenance_request.status = 'completed'
-        maintenance_request.completed_date = timezone.now().date()
-        maintenance_request.save()
-        
-        MaintenanceHistory.objects.create(
-            maintenance_request=maintenance_request,
-            performed_by=request.user,
-            notes=data.get('notes', ''),
-            cost=data.get('cost'),
-            parts_used=data.get('parts_used', '')
-        )
-        
-        return JsonResponse({'message': 'Maintenance request completed'})
+        try:
+            maintenance_request.status = 'completed'
+            maintenance_request.completed_date = timezone.now().date()
+            maintenance_request.save()
+            
+            MaintenanceHistory.objects.create(
+                maintenance_request=maintenance_request,
+                performed_by=request.user,
+                notes=data.get('notes', ''),
+                cost=data.get('cost'),
+                parts_used=data.get('parts_used', '')
+            )
+            
+            return JsonResponse({'message': 'Maintenance request completed'})
+        except ValidationError as e:
+            return JsonResponse({'error': e.message_dict if hasattr(e, 'message_dict') else str(e)}, status=400)
 
 
 @login_required
@@ -451,19 +463,31 @@ def create_ticket_view(request):
         duration_hours = request.POST.get('duration_hours')
         
         if title and description and equipment_id:
-            MaintenanceRequest.objects.create(
-                title=title,
-                description=description,
-                equipment_id=equipment_id,
-                requested_by=request.user,
-                priority=priority,
-                request_type=request_type,
-                scheduled_date=scheduled_date if scheduled_date else None,
-                assigned_team_id=assigned_team_id if assigned_team_id else None,
-                assigned_technician_id=assigned_technician_id if assigned_technician_id else None,
-                duration_hours=duration_hours if duration_hours else None
-            )
-            return redirect('tickets')
+            try:
+                MaintenanceRequest.objects.create(
+                    title=title,
+                    description=description,
+                    equipment_id=equipment_id,
+                    requested_by=request.user,
+                    priority=priority,
+                    request_type=request_type,
+                    scheduled_date=scheduled_date if scheduled_date else None,
+                    assigned_team_id=assigned_team_id if assigned_team_id else None,
+                    assigned_technician_id=assigned_technician_id if assigned_technician_id else None,
+                    duration_hours=duration_hours if duration_hours else None
+                )
+                return redirect('tickets')
+            except ValidationError as e:
+                equipments = Equipment.objects.all()
+                teams = MaintenanceTeam.objects.all()
+                technicians = User.objects.filter(user_type='technician')
+                error_msg = e.messages[0] if hasattr(e, 'messages') else str(e)
+                return render(request, 'create-ticket.html', {
+                    'equipments': equipments,
+                    'teams': teams,
+                    'technicians': technicians,
+                    'error': error_msg
+                })
             
     equipments = Equipment.objects.all()
     teams = MaintenanceTeam.objects.all()
