@@ -85,3 +85,45 @@ class MaintenanceTests(TestCase):
         response = self.client.get(reverse('dashboard'))
         self.assertEqual(response.status_code, 200)
         self.assertTemplateUsed(response, 'dashboard.html')
+
+    def test_phase3_request_fields_and_types(self):
+        response = self.client.post(
+            reverse('request_list'),
+            data=json.dumps({
+                'title': 'Monthly Preventive Service',
+                'description': 'Routine filter replacement',
+                'equipment': self.equipment.id,
+                'request_type': 'preventive',
+                'priority': 'medium',
+                'scheduled_date': '2026-09-15',
+                'duration_hours': 2.5,
+                'assigned_technician': self.user.id,
+                'assigned_team': self.team.id
+            }),
+            content_type='application/json'
+        )
+        self.assertEqual(response.status_code, 201)
+        req = MaintenanceRequest.objects.get(title='Monthly Preventive Service')
+        self.assertEqual(req.request_type, 'preventive')
+        self.assertEqual(req.assigned_technician, self.user)
+        self.assertEqual(float(req.duration_hours), 2.5)
+
+    def test_gearguard_statuses(self):
+        response = self.client.put(
+            reverse('request_detail', kwargs={'pk': self.request.pk}),
+            data=json.dumps({'status': 'repaired'}),
+            content_type='application/json'
+        )
+        self.assertEqual(response.status_code, 200)
+        self.request.refresh_from_db()
+        self.assertEqual(self.request.status, 'repaired')
+
+        # Test Scrap status setting
+        response_scrap = self.client.put(
+            reverse('request_detail', kwargs={'pk': self.request.pk}),
+            data=json.dumps({'status': 'scrap'}),
+            content_type='application/json'
+        )
+        self.assertEqual(response_scrap.status_code, 200)
+        self.request.refresh_from_db()
+        self.assertEqual(self.request.status, 'scrap')

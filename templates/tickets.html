@@ -59,7 +59,7 @@
         <div class="table-wrap">
           <table class="data-table">
             <thead>
-              <tr><th>ID</th><th>Subject</th><th>Equipment</th><th>Assignee</th><th>Priority</th><th>Status</th></tr>
+              <tr><th>ID</th><th>Subject</th><th>Type</th><th>Equipment</th><th>Team / Tech</th><th>Priority</th><th>Status</th></tr>
             </thead>
             <tbody>
               {% if requests %}
@@ -67,16 +67,27 @@
                 <tr data-ticket-row data-status="{{ req.status }}">
                   <td>TKT-{{ req.id }}</td>
                   <td>{{ req.title }}</td>
+                  <td><span class="badge badge--ghost">{{ req.get_request_type_display|default:req.request_type|title }}</span></td>
                   <td>{{ req.equipment.name }}</td>
-                  <td>{{ req.assigned_team.name|default:"Unassigned" }}</td>
+                  <td>
+                    {% if req.assigned_technician %}
+                      {{ req.assigned_technician.get_full_name|default:req.assigned_technician.username }}
+                    {% elif req.assigned_team %}
+                      {{ req.assigned_team.name }}
+                    {% else %}
+                      Unassigned
+                    {% endif %}
+                  </td>
                   <td><span class="badge badge--{{ req.priority }}">{{ req.priority|title }}</span></td>
                   <td>
-                    {% if req.status == 'pending' %}
-                      <span class="badge badge--open">Pending</span>
+                    {% if req.status == 'pending' or req.status == 'new' %}
+                      <span class="badge badge--open">{{ req.get_status_display|default:"New" }}</span>
                     {% elif req.status == 'in_progress' %}
                       <span class="badge badge--progress">In Progress</span>
-                    {% elif req.status == 'completed' %}
-                      <span class="badge badge--resolved">Completed</span>
+                    {% elif req.status == 'completed' or req.status == 'repaired' %}
+                      <span class="badge badge--resolved">{{ req.get_status_display|default:"Repaired" }}</span>
+                    {% elif req.status == 'scrap' %}
+                      <span class="badge badge--urgent">Scrap</span>
                     {% else %}
                       <span class="badge badge--urgent">{{ req.status|title }}</span>
                     {% endif %}
@@ -84,7 +95,7 @@
                 </tr>
                 {% endfor %}
               {% else %}
-                <tr><td colspan="6" style="text-align:center;padding:1.5rem">No tickets found. <a href="{% url 'create_ticket' %}">Create one now</a></td></tr>
+                <tr><td colspan="7" style="text-align:center;padding:1.5rem">No tickets found. <a href="{% url 'create_ticket' %}">Create one now</a></td></tr>
               {% endif %}
             </tbody>
           </table>
