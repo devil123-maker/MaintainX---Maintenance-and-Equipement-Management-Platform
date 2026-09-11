@@ -3,7 +3,8 @@ from .views import (
     team_list, team_detail, team_add_member, team_remove_member,
     request_list, request_detail, request_assign_team, request_complete,
     history_list, history_detail, dashboard,
-    tickets_view, create_ticket_view, workers_view, analytics_view, settings_view
+    tickets_view, create_ticket_view, workers_view, analytics_view, settings_view,
+    calendar_view
 )
 
 urlpatterns = [
@@ -26,6 +27,7 @@ urlpatterns = [
     # Dashboard & Pages
     path('dashboard/', dashboard, name='dashboard'),
     path('tickets/', tickets_view, name='tickets'),
+    path('calendar/', calendar_view, name='calendar'),
     path('create-ticket/', create_ticket_view, name='create_ticket'),
     path('workers/', workers_view, name='workers'),
     path('analytics/', analytics_view, name='analytics'),
