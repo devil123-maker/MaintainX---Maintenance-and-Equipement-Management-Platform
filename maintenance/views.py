@@ -515,3 +515,43 @@ def analytics_view(request):
 def settings_view(request):
     return render(request, 'settings.html')
 
+
+@login_required
+def calendar_view(request):
+    preventive_requests = MaintenanceRequest.objects.filter(
+        request_type='preventive',
+        scheduled_date__isnull=False
+    ).select_related('equipment', 'assigned_team', 'assigned_technician')
+    
+    if request.headers.get('Accept') == 'application/json' or request.GET.get('format') == 'json':
+        events = [{
+            'id': req.id,
+            'title': req.title,
+            'description': req.description,
+            'equipment_id': req.equipment.id,
+            'equipment_name': req.equipment.name,
+            'equipment_serial': req.equipment.serial_number,
+            'assigned_team_id': req.assigned_team.id if req.assigned_team else None,
+            'team_name': req.assigned_team.name if req.assigned_team else '',
+            'assigned_technician_id': req.assigned_technician.id if req.assigned_technician else None,
+            'technician_name': req.assigned_technician.get_full_name() or req.assigned_technician.username if req.assigned_technician else '',
+            'status': req.status,
+            'priority': req.priority,
+            'request_type': req.request_type,
+            'scheduled_date': req.scheduled_date.isoformat() if req.scheduled_date else None,
+            'is_overdue': req.is_overdue
+        } for req in preventive_requests]
+        return JsonResponse({'events': events})
+
+    equipments = Equipment.objects.exclude(status='scrapped')
+    teams = MaintenanceTeam.objects.all()
+    technicians = User.objects.filter(user_type='technician')
+
+    context = {
+        'preventive_requests': preventive_requests,
+        'equipments': equipments,
+        'teams': teams,
+        'technicians': technicians,
+    }
+    return render(request, 'calendar.html', context)
+

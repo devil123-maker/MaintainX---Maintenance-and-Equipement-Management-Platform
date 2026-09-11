@@ -279,3 +279,70 @@ class MaintenanceTests(TestCase):
         self.assertEqual(response.status_code, 200)
         self.equipment.refresh_from_db()
         self.assertEqual(self.equipment.status, 'scrapped')
+
+    def test_calendar_view_render(self):
+        response = self.client.get(reverse('calendar'))
+        self.assertEqual(response.status_code, 200)
+        self.assertTemplateUsed(response, 'calendar.html')
+
+    def test_calendar_api_preventive_filtering(self):
+        # Create a corrective request (should NOT appear on preventive calendar)
+        MaintenanceRequest.objects.create(
+            title='Breakdown Urgent Repair',
+            description='Motor failed',
+            equipment=self.equipment,
+            requested_by=self.user,
+            request_type='corrective',
+            scheduled_date='2026-09-20'
+        )
+        # Create a preventive request (SHOULD appear)
+        prev_req = MaintenanceRequest.objects.create(
+            title='Monthly Gearbox Inspection',
+            description='Routine preventive check',
+            equipment=self.equipment,
+            requested_by=self.user,
+            request_type='preventive',
+            scheduled_date='2026-09-22'
+        )
+
+        response = self.client.get(reverse('calendar'), HTTP_ACCEPT='application/json')
+        self.assertEqual(response.status_code, 200)
+        data = response.json()
+        event_titles = [e['title'] for e in data['events']]
+        self.assertIn('Monthly Gearbox Inspection', event_titles)
+        self.assertNotIn('Breakdown Urgent Repair', event_titles)
+
+    def test_calendar_reschedule_api(self):
+        prev_req = MaintenanceRequest.objects.create(
+            title='Reschedule Target',
+            description='Rescheduling test',
+            equipment=self.equipment,
+            requested_by=self.user,
+            request_type='preventive',
+            scheduled_date='2026-09-10'
+        )
+        response = self.client.put(
+            reverse('request_detail', kwargs={'pk': prev_req.pk}),
+            data=json.dumps({'scheduled_date': '2026-09-25'}),
+            content_type='application/json'
+        )
+        self.assertEqual(response.status_code, 200)
+        prev_req.refresh_from_db()
+        self.assertEqual(str(prev_req.scheduled_date), '2026-09-25')
+
+    def test_calendar_scrapped_equipment_protection(self):
+        self.equipment.status = 'scrapped'
+        self.equipment.save()
+
+        response = self.client.post(
+            reverse('request_list'),
+            data=json.dumps({
+                'title': 'Preventive on Scrapped Machine',
+                'description': 'Should fail',
+                'equipment': self.equipment.id,
+                'request_type': 'preventive',
+                'scheduled_date': '2026-09-28'
+            }),
+            content_type='application/json'
+        )
+        self.assertEqual(response.status_code, 400)
