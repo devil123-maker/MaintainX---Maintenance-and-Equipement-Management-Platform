@@ -11,11 +11,19 @@ from .models import Equipment
 def equipment_list(request):
     if request.method == 'GET':
         status_filter = request.GET.get('status')
-        if status_filter:
-            equipment = Equipment.objects.filter(status=status_filter)
+        if status_filter and status_filter != 'all':
+            equipment_qs = Equipment.objects.filter(status=status_filter)
         else:
-            equipment = Equipment.objects.all()
+            equipment_qs = Equipment.objects.all()
         
+        equipment_qs = equipment_qs.prefetch_related('maintenance_requests', 'assigned_employee', 'maintenance_team', 'default_technician')
+
+        accept_header = request.headers.get('Accept', '')
+        wants_html = 'text/html' in accept_header and request.GET.get('format') != 'json'
+
+        if wants_html:
+            return render(request, 'equipment.html', {'equipments': equipment_qs, 'current_status': status_filter or 'all'})
+
         data = [{
             'id': eq.id,
             'name': eq.name,
@@ -28,7 +36,9 @@ def equipment_list(request):
             'assigned_employee': eq.assigned_employee.id if eq.assigned_employee else None,
             'maintenance_team': eq.maintenance_team.id if eq.maintenance_team else None,
             'default_technician': eq.default_technician.id if eq.default_technician else None,
-        } for eq in equipment]
+            'total_maintenance_requests': eq.maintenance_count,
+            'open_maintenance_requests': eq.open_maintenance_count,
+        } for eq in equipment_qs]
         return JsonResponse({'equipment': data})
     
     elif request.method == 'POST':
@@ -63,6 +73,14 @@ def equipment_detail(request, pk):
     equipment = get_object_or_404(Equipment, pk=pk)
     
     if request.method == 'GET':
+        accept_header = request.headers.get('Accept', '')
+        wants_html = 'text/html' in accept_header and request.GET.get('format') != 'json'
+
+        if wants_html:
+            from django.shortcuts import redirect
+            return redirect('equipment_maintenance', pk=pk)
+
+        latest_req = equipment.latest_maintenance_request
         data = {
             'id': equipment.id,
             'name': equipment.name,
@@ -86,6 +104,15 @@ def equipment_detail(request, pk):
             'maintenance_team_name': equipment.maintenance_team.name if equipment.maintenance_team else '',
             'default_technician': equipment.default_technician.id if equipment.default_technician else None,
             'default_technician_name': equipment.default_technician.first_name if equipment.default_technician else '',
+            'total_maintenance_requests': equipment.maintenance_count,
+            'open_maintenance_requests': equipment.open_maintenance_count,
+            'latest_maintenance_request': {
+                'id': latest_req.id,
+                'title': latest_req.title,
+                'status': latest_req.status,
+                'request_type': latest_req.request_type,
+                'created_at': latest_req.created_at.isoformat()
+            } if latest_req else None
         }
         return JsonResponse(data)
     
@@ -114,3 +141,39 @@ def equipment_detail(request, pk):
     elif request.method == 'DELETE':
         equipment.delete()
         return JsonResponse({'message': 'Equipment deleted successfully'})
+
+
+@login_required
+def equipment_maintenance(request, pk):
+    equipment = get_object_or_404(Equipment, pk=pk)
+    requests_qs = equipment.maintenance_requests.select_related('assigned_team', 'assigned_technician', 'equipment').order_by('-created_at')
+    
+    if request.headers.get('Accept') == 'application/json' or request.GET.get('format') == 'json':
+        data = {
+            'equipment_id': equipment.id,
+            'equipment_name': equipment.name,
+            'equipment_serial': equipment.serial_number,
+            'status': equipment.status,
+            'total_requests': equipment.maintenance_count,
+            'open_requests': equipment.open_maintenance_count,
+            'requests': [{
+                'id': req.id,
+                'title': req.title,
+                'request_type': req.request_type,
+                'status': req.status,
+                'priority': req.priority,
+                'scheduled_date': req.scheduled_date.isoformat() if req.scheduled_date else None,
+                'duration_display': req.duration_display,
+                'is_overdue': req.is_overdue
+            } for req in requests_qs]
+        }
+        return JsonResponse(data)
+
+    context = {
+        'equipment': equipment,
+        'maintenance_requests': requests_qs,
+        'total_count': equipment.maintenance_count,
+        'open_count': equipment.open_maintenance_count,
+        'latest_request': equipment.latest_maintenance_request
+    }
+    return render(request, 'equipment_maintenance.html', context)

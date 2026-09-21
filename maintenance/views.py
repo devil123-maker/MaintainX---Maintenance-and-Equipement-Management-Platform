@@ -150,7 +150,7 @@ def request_list(request):
     elif request.method == 'POST':
         data = json.loads(request.body)
         try:
-            maintenance_request = MaintenanceRequest(
+            maintenance_request = MaintenanceRequest.objects.create(
                 title=data['title'],
                 description=data['description'],
                 equipment_id=data['equipment'],
@@ -159,13 +159,15 @@ def request_list(request):
                 request_type=data.get('request_type', 'corrective'),
                 scheduled_date=data.get('scheduled_date'),
                 duration_hours=data.get('duration_hours'),
+                duration_value=data.get('duration_value'),
+                duration_unit=data.get('duration_unit', 'minutes'),
                 assigned_technician_id=data.get('assigned_technician'),
                 status='pending'
             )
             if data.get('assigned_team'):
                 maintenance_request.assigned_team_id = data['assigned_team']
                 maintenance_request.status = 'in_progress'
-            maintenance_request.save()
+                maintenance_request.save()
             return JsonResponse({
                 'id': maintenance_request.id,
                 'title': maintenance_request.title,
@@ -212,6 +214,9 @@ def request_detail(request, pk):
             'status': maintenance_request.status,
             'priority': maintenance_request.priority,
             'duration_hours': float(maintenance_request.duration_hours) if maintenance_request.duration_hours is not None else None,
+            'duration_value': float(maintenance_request.duration_value) if maintenance_request.duration_value is not None else None,
+            'duration_unit': maintenance_request.duration_unit,
+            'duration_display': maintenance_request.duration_display,
             'scheduled_date': maintenance_request.scheduled_date,
             'completed_date': maintenance_request.completed_date,
             'created_at': maintenance_request.created_at,
@@ -227,7 +232,12 @@ def request_detail(request, pk):
             maintenance_request.priority = data.get('priority', maintenance_request.priority)
             maintenance_request.request_type = data.get('request_type', maintenance_request.request_type)
             maintenance_request.scheduled_date = data.get('scheduled_date', maintenance_request.scheduled_date)
-            maintenance_request.duration_hours = data.get('duration_hours', maintenance_request.duration_hours)
+            if 'duration_hours' in data:
+                maintenance_request.duration_hours = data['duration_hours']
+            if 'duration_value' in data:
+                maintenance_request.duration_value = data['duration_value']
+            if 'duration_unit' in data:
+                maintenance_request.duration_unit = data['duration_unit']
             if 'assigned_team' in data:
                 maintenance_request.assigned_team_id = data['assigned_team']
             if 'assigned_technician' in data:
@@ -445,12 +455,16 @@ def dashboard(request):
 
 @login_required
 def tickets_view(request):
+    equipment_id = request.GET.get('equipment')
     requests = MaintenanceRequest.objects.all().order_by('-created_at')
-    return render(request, 'tickets.html', {'requests': requests})
+    if equipment_id:
+        requests = requests.filter(equipment_id=equipment_id)
+    return render(request, 'tickets.html', {'requests': requests, 'selected_equipment_id': equipment_id})
 
 
 @login_required
 def create_ticket_view(request):
+    selected_equipment_id = request.GET.get('equipment')
     if request.method == 'POST':
         title = request.POST.get('title')
         description = request.POST.get('description')
@@ -461,6 +475,8 @@ def create_ticket_view(request):
         assigned_team_id = request.POST.get('assigned_team')
         assigned_technician_id = request.POST.get('assigned_technician')
         duration_hours = request.POST.get('duration_hours')
+        duration_value = request.POST.get('duration_value')
+        duration_unit = request.POST.get('duration_unit', 'minutes')
         
         if title and description and equipment_id:
             try:
@@ -474,7 +490,9 @@ def create_ticket_view(request):
                     scheduled_date=scheduled_date if scheduled_date else None,
                     assigned_team_id=assigned_team_id if assigned_team_id else None,
                     assigned_technician_id=assigned_technician_id if assigned_technician_id else None,
-                    duration_hours=duration_hours if duration_hours else None
+                    duration_hours=duration_hours if duration_hours else None,
+                    duration_value=duration_value if duration_value else None,
+                    duration_unit=duration_unit
                 )
                 return redirect('tickets')
             except ValidationError as e:
@@ -486,7 +504,8 @@ def create_ticket_view(request):
                     'equipments': equipments,
                     'teams': teams,
                     'technicians': technicians,
-                    'error': error_msg
+                    'error': error_msg,
+                    'selected_equipment_id': equipment_id
                 })
             
     equipments = Equipment.objects.all()
@@ -495,7 +514,8 @@ def create_ticket_view(request):
     return render(request, 'create-ticket.html', {
         'equipments': equipments,
         'teams': teams,
-        'technicians': technicians
+        'technicians': technicians,
+        'selected_equipment_id': selected_equipment_id
     })
 
 
@@ -538,6 +558,9 @@ def calendar_view(request):
             'status': req.status,
             'priority': req.priority,
             'request_type': req.request_type,
+            'duration_value': float(req.duration_value) if req.duration_value is not None else None,
+            'duration_unit': req.duration_unit,
+            'duration_display': req.duration_display,
             'scheduled_date': req.scheduled_date.isoformat() if req.scheduled_date else None,
             'is_overdue': req.is_overdue
         } for req in preventive_requests]

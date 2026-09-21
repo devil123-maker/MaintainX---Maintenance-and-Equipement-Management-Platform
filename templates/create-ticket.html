@@ -23,6 +23,7 @@
         <a href="{% url 'dashboard' %}" class="sidebar__link"><i class="fa-solid fa-gauge-high"></i> Dashboard</a>
         <a href="{% url 'tickets' %}" class="sidebar__link"><i class="fa-solid fa-ticket"></i> Tickets</a>
         <a href="{% url 'calendar' %}" class="sidebar__link"><i class="fa-solid fa-calendar-days"></i> Calendar</a>
+        <a href="{% url 'equipment_list' %}" class="sidebar__link"><i class="fa-solid fa-cubes"></i> Equipment</a>
         <a href="{% url 'create_ticket' %}" class="sidebar__link is-active"><i class="fa-solid fa-plus"></i> Create Ticket</a>
         <a href="{% url 'workers' %}" class="sidebar__link"><i class="fa-solid fa-users"></i> Workers</a>
         <a href="{% url 'analytics' %}" class="sidebar__link"><i class="fa-solid fa-chart-line"></i> Analytics</a>
@@ -67,7 +68,7 @@
                   <select name="equipment" id="equipment" class="form-select" required>
                     <option value="">Select Equipment</option>
                     {% for eq in equipments %}
-                      <option value="{{ eq.id }}">{{ eq.name }} ({{ eq.serial_number }})</option>
+                      <option value="{{ eq.id }}" {% if selected_equipment_id|slugify == eq.id|slugify %}selected{% endif %}>{{ eq.name }} ({{ eq.serial_number }})</option>
                     {% endfor %}
                   </select>
                 </div>
@@ -107,8 +108,15 @@
                   <input type="date" name="scheduled_date" id="scheduled_date" class="form-input">
                 </div>
                 <div class="form-group">
-                  <label class="form-label" for="duration_hours">Duration (Hours)</label>
-                  <input type="number" name="duration_hours" id="duration_hours" class="form-input" placeholder="e.g. 2.5" step="0.25" min="0">
+                  <label class="form-label" for="duration_value">Duration (Optional)</label>
+                  <div style="display:flex;gap:0.5rem;">
+                    <input type="number" name="duration_value" id="duration_value" class="form-input" placeholder="e.g. 10 or 2.5" step="any" min="0" style="flex:1;">
+                    <select name="duration_unit" id="duration_unit" class="form-select" style="width:130px;">
+                      <option value="minutes" selected>Minutes</option>
+                      <option value="hours">Hours</option>
+                      <option value="days">Days</option>
+                    </select>
+                  </div>
                 </div>
               </div>
               <div class="form-group">

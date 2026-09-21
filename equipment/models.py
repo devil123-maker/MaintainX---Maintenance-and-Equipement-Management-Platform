@@ -56,3 +56,15 @@ class Equipment(models.Model):
 
     def __str__(self):
         return f"{self.name} ({self.serial_number})"
+
+    @property
+    def maintenance_count(self):
+        return self.maintenance_requests.count()
+
+    @property
+    def open_maintenance_count(self):
+        return self.maintenance_requests.filter(status__in=['pending', 'new', 'in_progress']).count()
+
+    @property
+    def latest_maintenance_request(self):
+        return self.maintenance_requests.order_by('-created_at').first()
