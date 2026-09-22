@@ -42,6 +42,8 @@ def equipment_list(request):
         return JsonResponse({'equipment': data})
     
     elif request.method == 'POST':
+        if not request.user.can_manage_equipment:
+            return JsonResponse({'error': 'Permission denied. Only admins or managers can create equipment.'}, status=403)
         data = json.loads(request.body)
         equipment = Equipment.objects.create(
             name=data['name'],
@@ -117,6 +119,8 @@ def equipment_detail(request, pk):
         return JsonResponse(data)
     
     elif request.method == 'PUT':
+        if not request.user.can_manage_equipment:
+            return JsonResponse({'error': 'Permission denied. Only admins or managers can update equipment.'}, status=403)
         data = json.loads(request.body)
         equipment.name = data.get('name', equipment.name)
         equipment.description = data.get('description', equipment.description)
@@ -139,6 +143,8 @@ def equipment_detail(request, pk):
         return JsonResponse({'message': 'Equipment updated successfully'})
     
     elif request.method == 'DELETE':
+        if not request.user.can_manage_equipment:
+            return JsonResponse({'error': 'Permission denied. Only admins or managers can delete equipment.'}, status=403)
         equipment.delete()
         return JsonResponse({'message': 'Equipment deleted successfully'})
 

@@ -23,6 +23,8 @@ def team_list(request):
         return JsonResponse({'teams': data})
     
     elif request.method == 'POST':
+        if not request.user.is_admin_user:
+            return JsonResponse({'error': 'Permission denied. Only admins or managers can create teams.'}, status=403)
         data = json.loads(request.body)
         team = MaintenanceTeam.objects.create(
             name=data['name'],
@@ -67,6 +69,8 @@ def team_detail(request, pk):
         return JsonResponse(data)
     
     elif request.method == 'PUT':
+        if not (request.user.is_admin_user or team.leader == request.user):
+            return JsonResponse({'error': 'Permission denied. Only team leaders or admins can update this team.'}, status=403)
         data = json.loads(request.body)
         team.name = data.get('name', team.name)
         team.description = data.get('description', team.description)
@@ -78,6 +82,8 @@ def team_detail(request, pk):
         return JsonResponse({'message': 'Team updated successfully'})
     
     elif request.method == 'DELETE':
+        if not request.user.is_admin_user:
+            return JsonResponse({'error': 'Permission denied. Only admins can delete teams.'}, status=403)
         team.delete()
         return JsonResponse({'message': 'Team deleted successfully'})
 
@@ -85,6 +91,8 @@ def team_detail(request, pk):
 @login_required
 def team_add_member(request, pk):
     team = get_object_or_404(MaintenanceTeam, pk=pk)
+    if not (request.user.is_admin_user or team.leader == request.user):
+        return JsonResponse({'error': 'Permission denied.'}, status=403)
     if request.method == 'POST':
         data = json.loads(request.body)
         user_id = data.get('user_id')
@@ -99,6 +107,8 @@ def team_add_member(request, pk):
 @login_required
 def team_remove_member(request, pk):
     team = get_object_or_404(MaintenanceTeam, pk=pk)
+    if not (request.user.is_admin_user or team.leader == request.user):
+        return JsonResponse({'error': 'Permission denied.'}, status=403)
     if request.method == 'POST':
         data = json.loads(request.body)
         user_id = data.get('user_id')
@@ -225,6 +235,8 @@ def request_detail(request, pk):
         return JsonResponse(data)
     
     elif request.method == 'PUT':
+        if not request.user.can_edit_request(maintenance_request):
+            return JsonResponse({'error': 'Permission denied. You are not authorized to update this request.'}, status=403)
         data = json.loads(request.body)
         try:
             maintenance_request.title = data.get('title', maintenance_request.title)
@@ -239,6 +251,8 @@ def request_detail(request, pk):
             if 'duration_unit' in data:
                 maintenance_request.duration_unit = data['duration_unit']
             if 'assigned_team' in data:
+                if not request.user.can_assign_requests:
+                    return JsonResponse({'error': 'Permission denied. Only admins or team leaders can reassign teams.'}, status=403)
                 maintenance_request.assigned_team_id = data['assigned_team']
             if 'assigned_technician' in data:
                 maintenance_request.assigned_technician_id = data['assigned_technician']
@@ -250,6 +264,8 @@ def request_detail(request, pk):
             return JsonResponse({'error': e.message_dict if hasattr(e, 'message_dict') else str(e)}, status=400)
     
     elif request.method == 'DELETE':
+        if not request.user.is_admin_user:
+            return JsonResponse({'error': 'Permission denied. Only admins can delete requests.'}, status=403)
         maintenance_request.delete()
         return JsonResponse({'message': 'Request deleted successfully'})
 
@@ -257,6 +273,8 @@ def request_detail(request, pk):
 @login_required
 def request_assign_team(request, pk):
     maintenance_request = get_object_or_404(MaintenanceRequest, pk=pk)
+    if not request.user.can_assign_requests:
+        return JsonResponse({'error': 'Permission denied. Only admins or team leaders can assign teams.'}, status=403)
     if request.method == 'POST':
         data = json.loads(request.body)
         team_id = data.get('team_id')
@@ -275,6 +293,8 @@ def request_assign_team(request, pk):
 @login_required
 def request_complete(request, pk):
     maintenance_request = get_object_or_404(MaintenanceRequest, pk=pk)
+    if not request.user.can_edit_request(maintenance_request):
+        return JsonResponse({'error': 'Permission denied.'}, status=403)
     if request.method == 'POST':
         data = json.loads(request.body)
         try:
@@ -528,6 +548,88 @@ def workers_view(request):
 
 @login_required
 def analytics_view(request):
+    if request.headers.get('Accept') == 'application/json' or request.GET.get('format') == 'json':
+        from django.db.models import Count, Avg, Q
+
+        total_requests = MaintenanceRequest.objects.count()
+        completed_count = MaintenanceRequest.objects.filter(status__in=['completed', 'repaired']).count()
+        open_count = MaintenanceRequest.objects.filter(status__in=['pending', 'new', 'in_progress']).count()
+        scrap_count = MaintenanceRequest.objects.filter(status='scrap').count()
+
+        completed_reqs = MaintenanceRequest.objects.filter(status__in=['completed', 'repaired'])
+        total_completed = completed_reqs.count()
+        if total_completed > 0:
+            on_time_count = sum(1 for r in completed_reqs if not r.is_overdue)
+            sla_compliance = int(round((on_time_count / total_completed) * 100))
+        else:
+            sla_compliance = 100
+
+        avg_hours_data = MaintenanceRequest.objects.filter(
+            status__in=['completed', 'repaired'],
+            duration_hours__isnull=False
+        ).aggregate(avg_h=Avg('duration_hours'))
+        avg_resolution_hours = round(float(avg_hours_data['avg_h']), 1) if avg_hours_data['avg_h'] is not None else 0.0
+
+        team_stats = list(MaintenanceTeam.objects.annotate(
+            total_reqs=Count('assigned_requests'),
+            completed_reqs=Count('assigned_requests', filter=Q(assigned_requests__status__in=['completed', 'repaired']))
+        ).values('name', 'total_reqs', 'completed_reqs'))
+
+        category_stats = list(Equipment.objects.values('category').annotate(
+            equipment_count=Count('id'),
+            request_count=Count('maintenance_requests')
+        ).order_by('-request_count'))
+        for item in category_stats:
+            if not item['category']:
+                item['category'] = 'General'
+
+        type_stats = list(MaintenanceRequest.objects.values('request_type').annotate(
+            count=Count('id')
+        ))
+
+        status_stats = list(MaintenanceRequest.objects.values('status').annotate(
+            count=Count('id')
+        ))
+
+        priority_stats = list(MaintenanceRequest.objects.values('priority').annotate(
+            count=Count('id')
+        ))
+
+        now = timezone.now().date()
+        months = []
+        for i in range(5, -1, -1):
+            m = (now.month - i - 1) % 12 + 1
+            y = now.year + ((now.month - i - 1) // 12)
+            months.append((y, m))
+
+        monthly_trends = []
+        month_names = ["Jan", "Feb", "Mar", "Apr", "May", "Jun", "Jul", "Aug", "Sep", "Oct", "Nov", "Dec"]
+        for y, m in months:
+            opened = MaintenanceRequest.objects.filter(created_at__year=y, created_at__month=m).count()
+            resolved = MaintenanceRequest.objects.filter(completed_date__year=y, completed_date__month=m, status__in=['completed', 'repaired']).count()
+            monthly_trends.append({
+                'month': f"{month_names[m-1]}",
+                'opened': opened,
+                'resolved': resolved
+            })
+
+        return JsonResponse({
+            'kpis': {
+                'total_requests': total_requests,
+                'completed_count': completed_count,
+                'open_count': open_count,
+                'scrap_count': scrap_count,
+                'sla_compliance': f"{sla_compliance}%",
+                'avg_resolution': f"{avg_resolution_hours}h"
+            },
+            'by_team': team_stats,
+            'by_category': category_stats,
+            'by_type': type_stats,
+            'by_status': status_stats,
+            'by_priority': priority_stats,
+            'monthly_trends': monthly_trends
+        })
+
     return render(request, 'analytics.html')
 
 
