@@ -69,7 +69,7 @@ class AccountsTests(TestCase):
         response = self.client.post(reverse('password_reset'), {'email': 'reset@example.com'})
         self.assertRedirects(response, reverse('password_reset_done'))
         self.assertEqual(len(mail.outbox), 1)
-        self.assertIn('MaintainX', mail.outbox[0].subject)
+        self.assertTrue('GearGuard' in mail.outbox[0].subject or 'MaintainX' in mail.outbox[0].subject)
 
     def test_login_remember_me_checked(self):
         user = User.objects.create_user(

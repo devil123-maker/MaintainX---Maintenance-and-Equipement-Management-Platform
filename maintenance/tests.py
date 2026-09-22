@@ -413,3 +413,380 @@ class MaintenanceTests(TestCase):
         self.assertEqual(res.status_code, 403)
 
 
+class GearGuardEndToEndIntegrationTests(TestCase):
+    """
+    Phase 9: Comprehensive 29-Step End-to-End Acceptance Integration Test
+    Validates complete lifecycle:
+    Auth -> Roles -> Equipment CRUD -> Team Setup -> Corrective Ticket ->
+    Auto-fill -> Kanban Statuses -> Dynamic Durations -> Completion History ->
+    Smart Buttons -> Preventive Calendar Scheduling -> Reschedule ->
+    Analytics/KPIs -> Permissions Enforcement -> Scrap Workflow -> Restricted Scrapped Creation -> Session Cleanup.
+    """
+
+    def test_complete_gearguard_29_step_lifecycle(self):
+        # ----------------------------------------------------
+        # STEP 1: Provision Multi-Role User Accounts
+        # ----------------------------------------------------
+        manager = User.objects.create_user(
+            username='mgr@gearguard.local',
+            email='mgr@gearguard.local',
+            password='Password123!',
+            first_name='Facility',
+            last_name='Manager',
+            user_type='manager'
+        )
+        tech_lead = User.objects.create_user(
+            username='lead@gearguard.local',
+            email='lead@gearguard.local',
+            password='Password123!',
+            first_name='Lead',
+            last_name='Tech',
+            user_type='technician'
+        )
+        technician = User.objects.create_user(
+            username='tech@gearguard.local',
+            email='tech@gearguard.local',
+            password='Password123!',
+            first_name='Junior',
+            last_name='Tech',
+            user_type='technician'
+        )
+        customer = User.objects.create_user(
+            username='client@gearguard.local',
+            email='client@gearguard.local',
+            password='Password123!',
+            first_name='Shop',
+            last_name='Operator',
+            user_type='customer'
+        )
+        self.assertEqual(User.objects.filter(email__endswith='@gearguard.local').count(), 4)
+
+        # ----------------------------------------------------
+        # STEP 2: Customer Authentication & Session Check
+        # ----------------------------------------------------
+        login_ok = self.client.login(username='client@gearguard.local', password='Password123!')
+        self.assertTrue(login_ok)
+        resp = self.client.get(reverse('dashboard'))
+        self.assertEqual(resp.status_code, 200)
+
+        # ----------------------------------------------------
+        # STEP 3: Role Security Check: Customer Denied Equipment Creation
+        # ----------------------------------------------------
+        resp = self.client.post(
+            reverse('equipment_list'),
+            data=json.dumps({
+                'name': 'Unauthorized Lathe',
+                'serial_number': 'LATHE-UNAUTH-01'
+            }),
+            content_type='application/json'
+        )
+        self.assertEqual(resp.status_code, 403)
+
+        # ----------------------------------------------------
+        # STEP 4: Manager Authentication
+        # ----------------------------------------------------
+        self.client.logout()
+        login_ok = self.client.login(username='mgr@gearguard.local', password='Password123!')
+        self.assertTrue(login_ok)
+
+        # ----------------------------------------------------
+        # STEP 5: Maintenance Team Creation by Manager
+        # ----------------------------------------------------
+        resp = self.client.post(
+            reverse('team_list'),
+            data=json.dumps({'name': 'Heavy Machinery Response Team'}),
+            content_type='application/json'
+        )
+        self.assertEqual(resp.status_code, 201)
+        team_data = resp.json()
+        team = MaintenanceTeam.objects.get(id=team_data['id'])
+        team.leader = tech_lead
+        team.save()
+        team.members.add(tech_lead, technician)
+        self.assertEqual(team.members.count(), 2)
+
+        # ----------------------------------------------------
+        # STEP 6: Equipment Provisioning with Assigned Team & Default Tech
+        # ----------------------------------------------------
+        resp = self.client.post(
+            reverse('equipment_list'),
+            data=json.dumps({
+                'name': 'Industrial Hydraulic Press 500T',
+                'serial_number': 'PRESS-500T-2026',
+                'category': 'Heavy Machinery',
+                'department': 'Press Shop A',
+                'status': 'active',
+                'maintenance_team': team.id,
+                'default_technician': tech_lead.id
+            }),
+            content_type='application/json'
+        )
+        self.assertEqual(resp.status_code, 201)
+        eq_id = resp.json()['id']
+        equipment = Equipment.objects.get(id=eq_id)
+
+        # ----------------------------------------------------
+        # STEP 7: Equipment Properties Verification
+        # ----------------------------------------------------
+        self.assertEqual(equipment.status, 'active')
+        self.assertEqual(equipment.maintenance_team, team)
+        self.assertEqual(equipment.default_technician, tech_lead)
+        self.assertEqual(equipment.maintenance_count, 0)
+        self.assertEqual(equipment.open_maintenance_count, 0)
+
+        # ----------------------------------------------------
+        # STEP 8: Operator / Customer Login for Incident Reporting
+        # ----------------------------------------------------
+        self.client.logout()
+        login_ok = self.client.login(username='client@gearguard.local', password='Password123!')
+        self.assertTrue(login_ok)
+
+        # ----------------------------------------------------
+        # STEP 9: Corrective Maintenance Ticket Submission
+        # ----------------------------------------------------
+        resp = self.client.post(
+            reverse('request_list'),
+            data=json.dumps({
+                'title': 'Hydraulic seal leak under pressure',
+                'description': 'Fluid leaking during high pressure stamping cycle.',
+                'equipment': equipment.id,
+                'priority': 'high',
+                'request_type': 'corrective'
+            }),
+            content_type='application/json'
+        )
+        self.assertEqual(resp.status_code, 201)
+        ticket_id = resp.json()['id']
+        req = MaintenanceRequest.objects.get(id=ticket_id)
+
+        # ----------------------------------------------------
+        # STEP 10: Auto-Fill Validation (Team & Tech inherited from Equipment)
+        # ----------------------------------------------------
+        self.assertEqual(req.assigned_team, team)
+        self.assertEqual(req.assigned_technician, tech_lead)
+
+        # ----------------------------------------------------
+        # STEP 11: Request Initial State Verification
+        # ----------------------------------------------------
+        self.assertEqual(req.request_type, 'corrective')
+        self.assertEqual(req.priority, 'high')
+        self.assertEqual(req.requested_by, customer)
+
+        # ----------------------------------------------------
+        # STEP 12: Smart Button Active Request Count Verification
+        # ----------------------------------------------------
+        resp = self.client.get(
+            reverse('equipment_maintenance', kwargs={'pk': equipment.id}),
+            HTTP_ACCEPT='application/json'
+        )
+        self.assertEqual(resp.status_code, 200)
+        smart_btn_data = resp.json()
+        self.assertEqual(smart_btn_data['total_requests'], 1)
+        self.assertEqual(smart_btn_data['open_requests'], 1)
+
+        # ----------------------------------------------------
+        # STEP 13: Assigned Technician Authentication
+        # ----------------------------------------------------
+        self.client.logout()
+        login_ok = self.client.login(username='lead@gearguard.local', password='Password123!')
+        self.assertTrue(login_ok)
+
+        # ----------------------------------------------------
+        # STEP 14: Technician Ticket Inspection & Permission Check
+        # ----------------------------------------------------
+        resp = self.client.get(reverse('request_detail', kwargs={'pk': req.id}))
+        self.assertEqual(resp.status_code, 200)
+        req_details = resp.json()
+        self.assertEqual(req_details['id'], req.id)
+        self.assertEqual(req_details['assigned_technician'], tech_lead.id)
+
+        # ----------------------------------------------------
+        # STEP 15: Status Progression: Move to 'in_progress'
+        # ----------------------------------------------------
+        resp = self.client.put(
+            reverse('request_detail', kwargs={'pk': req.id}),
+            data=json.dumps({'status': 'in_progress'}),
+            content_type='application/json'
+        )
+        self.assertEqual(resp.status_code, 200)
+        req.refresh_from_db()
+        self.assertEqual(req.status, 'in_progress')
+
+        # ----------------------------------------------------
+        # STEP 16: Dynamic Duration Logging (Minutes to Hours conversion)
+        # ----------------------------------------------------
+        resp = self.client.put(
+            reverse('request_detail', kwargs={'pk': req.id}),
+            data=json.dumps({
+                'duration_value': 90,
+                'duration_unit': 'minutes'
+            }),
+            content_type='application/json'
+        )
+        self.assertEqual(resp.status_code, 200)
+        req.refresh_from_db()
+        self.assertEqual(req.duration_display, '90 mins')
+        self.assertEqual(float(req.duration_hours), 1.50)
+
+        # ----------------------------------------------------
+        # STEP 17: Request Completion with History Notes & Cost
+        # ----------------------------------------------------
+        resp = self.client.post(
+            reverse('request_complete', kwargs={'pk': req.id}),
+            data=json.dumps({
+                'notes': 'Replaced damaged main hydraulic cylinder gasket and bled the line.',
+                'cost': 275.50,
+                'parts_used': 'Hydraulic Gasket Kit #H-500'
+            }),
+            content_type='application/json'
+        )
+        self.assertEqual(resp.status_code, 200)
+        req.refresh_from_db()
+        self.assertEqual(req.status, 'completed')
+
+        # ----------------------------------------------------
+        # STEP 18: Maintenance History Audit Trail Created
+        # ----------------------------------------------------
+        history_entry = MaintenanceHistory.objects.filter(maintenance_request=req).first()
+        self.assertIsNotNone(history_entry)
+        self.assertEqual(history_entry.performed_by, tech_lead)
+        self.assertEqual(float(history_entry.cost), 275.50)
+        self.assertIn('Hydraulic Gasket Kit', history_entry.parts_used)
+
+        # ----------------------------------------------------
+        # STEP 19: Smart Button Re-Verification (Open count drops to 0)
+        # ----------------------------------------------------
+        resp = self.client.get(
+            reverse('equipment_maintenance', kwargs={'pk': equipment.id}),
+            HTTP_ACCEPT='application/json'
+        )
+        self.assertEqual(resp.status_code, 200)
+        smart_btn_data_after = resp.json()
+        self.assertEqual(smart_btn_data_after['total_requests'], 1)
+        self.assertEqual(smart_btn_data_after['open_requests'], 0)
+
+        # ----------------------------------------------------
+        # STEP 20: Schedule Preventive Maintenance via API
+        # ----------------------------------------------------
+        resp = self.client.post(
+            reverse('request_list'),
+            data=json.dumps({
+                'title': 'Bi-annual Hydraulic Pressure Calibration',
+                'description': 'Check pump tolerances and calibration sensors.',
+                'equipment': equipment.id,
+                'request_type': 'preventive',
+                'priority': 'medium',
+                'scheduled_date': '2026-10-15',
+                'assigned_team': team.id,
+                'assigned_technician': tech_lead.id
+            }),
+            content_type='application/json'
+        )
+        self.assertEqual(resp.status_code, 201)
+        prev_id = resp.json()['id']
+        prev_req = MaintenanceRequest.objects.get(id=prev_id)
+        self.assertEqual(prev_req.request_type, 'preventive')
+
+        # ----------------------------------------------------
+        # STEP 21: Preventive Calendar Verification via JSON Endpoint
+        # ----------------------------------------------------
+        resp = self.client.get(reverse('calendar'), HTTP_ACCEPT='application/json')
+        self.assertEqual(resp.status_code, 200)
+        cal_events = resp.json()['events']
+        self.assertTrue(any(e['id'] == prev_req.id for e in cal_events))
+
+        # ----------------------------------------------------
+        # STEP 22: Preventive Maintenance Rescheduling via API
+        # ----------------------------------------------------
+        resp = self.client.put(
+            reverse('request_detail', kwargs={'pk': prev_req.id}),
+            data=json.dumps({'scheduled_date': '2026-10-25'}),
+            content_type='application/json'
+        )
+        self.assertEqual(resp.status_code, 200)
+
+        # ----------------------------------------------------
+        # STEP 23: Verify Rescheduled Date Persisted
+        # ----------------------------------------------------
+        prev_req.refresh_from_db()
+        self.assertEqual(str(prev_req.scheduled_date), '2026-10-25')
+
+        # ----------------------------------------------------
+        # STEP 24: Kanban Board Status Update via API
+        # ----------------------------------------------------
+        resp = self.client.put(
+            reverse('request_detail', kwargs={'pk': prev_req.id}),
+            data=json.dumps({'status': 'in_progress'}),
+            content_type='application/json'
+        )
+        self.assertEqual(resp.status_code, 200)
+        prev_req.refresh_from_db()
+        self.assertEqual(prev_req.status, 'in_progress')
+
+        # ----------------------------------------------------
+        # STEP 25: Advanced Maintenance Analytics API Validation
+        # ----------------------------------------------------
+        resp = self.client.get(reverse('analytics'), HTTP_ACCEPT='application/json')
+        self.assertEqual(resp.status_code, 200)
+        analytics_data = resp.json()
+        self.assertIn('kpis', analytics_data)
+        self.assertIn('by_team', analytics_data)
+        self.assertIn('by_type', analytics_data)
+        self.assertIn('by_status', analytics_data)
+        self.assertGreaterEqual(analytics_data['kpis']['total_requests'], 2)
+
+        # ----------------------------------------------------
+        # STEP 26: Role Permission Guard: Customer Prohibited from Modifying Tech Ticket
+        # ----------------------------------------------------
+        self.client.logout()
+        self.client.login(username='client@gearguard.local', password='Password123!')
+        resp = self.client.put(
+            reverse('request_detail', kwargs={'pk': prev_req.id}),
+            data=json.dumps({'title': 'Customer Attempted Tamper'}),
+            content_type='application/json'
+        )
+        self.assertEqual(resp.status_code, 403)
+
+        # ----------------------------------------------------
+        # STEP 27: Equipment Scrap Lifecycle Workflow Execution
+        # ----------------------------------------------------
+        self.client.logout()
+        self.client.login(username='mgr@gearguard.local', password='Password123!')
+        resp = self.client.put(
+            reverse('request_detail', kwargs={'pk': prev_req.id}),
+            data=json.dumps({'status': 'scrap'}),
+            content_type='application/json'
+        )
+        self.assertEqual(resp.status_code, 200)
+        prev_req.refresh_from_db()
+        equipment.refresh_from_db()
+        self.assertEqual(prev_req.status, 'scrap')
+        self.assertEqual(equipment.status, 'scrapped')
+
+        # ----------------------------------------------------
+        # STEP 28: Scrapped Equipment Guard: Request Creation Prohibited
+        # ----------------------------------------------------
+        resp = self.client.post(
+            reverse('request_list'),
+            data=json.dumps({
+                'title': 'Preventive maintenance on decommissioned press',
+                'description': 'This should fail validation',
+                'equipment': equipment.id,
+                'request_type': 'preventive'
+            }),
+            content_type='application/json'
+        )
+        self.assertEqual(resp.status_code, 400)
+        self.assertIn('Cannot create a new maintenance request for scrapped equipment', resp.json().get('error', {}).get('equipment', [''])[0])
+
+        # ----------------------------------------------------
+        # STEP 29: Session Invalidation & Secure Logout
+        # ----------------------------------------------------
+        resp = self.client.get(reverse('logout'))
+        self.assertEqual(resp.status_code, 302)
+        resp_after_logout = self.client.get(reverse('dashboard'))
+        self.assertEqual(resp_after_logout.status_code, 302)
+        self.assertIn('login', resp_after_logout.url)
+
+
+

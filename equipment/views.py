@@ -16,7 +16,9 @@ def equipment_list(request):
         else:
             equipment_qs = Equipment.objects.all()
         
-        equipment_qs = equipment_qs.prefetch_related('maintenance_requests', 'assigned_employee', 'maintenance_team', 'default_technician')
+        equipment_qs = equipment_qs.select_related(
+            'assigned_employee', 'maintenance_team', 'default_technician'
+        ).prefetch_related('maintenance_requests')
 
         accept_header = request.headers.get('Accept', '')
         wants_html = 'text/html' in accept_header and request.GET.get('format') != 'json'

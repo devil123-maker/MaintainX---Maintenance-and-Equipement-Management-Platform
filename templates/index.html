@@ -4,7 +4,7 @@
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
-  <title>MaintainX — Enterprise Maintenance Management</title>
+  <title>GearGuard — Equipment & Maintenance Management Platform</title>
   <link rel="preconnect" href="https://fonts.googleapis.com">
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
   <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&family=Poppins:wght@600;700&display=swap" rel="stylesheet">
@@ -21,8 +21,8 @@
   <header class="landing-nav">
     <div class="landing-nav__inner">
       <a href="{% url 'dashboard' %}" class="logo">
-        <i class="fa-solid fa-wrench"></i>
-        MaintainX
+        <i class="fa-solid fa-shield-halved"></i>
+        GearGuard
       </a>
       <nav class="landing-nav__links">
         <a href="#features">Features</a>
@@ -101,8 +101,8 @@
   <footer class="landing-footer" id="about">
     <div class="landing-footer__grid">
       <div>
-        <a href="index.html" class="logo" style="margin-bottom:1rem">
-          <i class="fa-solid fa-wrench"></i> MaintainX
+        <a href="{% url 'dashboard' %}" class="logo" style="margin-bottom:1rem">
+          <i class="fa-solid fa-shield-halved"></i> GearGuard
         </a>
         <p>Modern maintenance management for forward-thinking teams.</p>
       </div>
@@ -125,8 +125,8 @@
       </div>
     </div>
     <div class="landing-footer__bottom">
-      <span>&copy; 2026 MaintainX. All rights reserved.</span>
-      <span>Built with HTML, CSS &amp; JavaScript</span>
+      <span>&copy; 2026 GearGuard. All rights reserved.</span>
+      <span>Built with Django &amp; Modern Web Standards</span>
     </div>
   </footer>
 
