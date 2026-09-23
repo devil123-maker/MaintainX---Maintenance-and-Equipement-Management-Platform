@@ -403,7 +403,9 @@ def dashboard(request):
         active_workers = User.objects.filter(is_active=True).count()
         
         # Recent requests
-        recent_requests = MaintenanceRequest.objects.order_by('-created_at')[:5]
+        recent_requests = MaintenanceRequest.objects.select_related(
+            'equipment', 'requested_by', 'assigned_team'
+        ).order_by('-created_at')[:5]
         recent_data = [{
             'id': req.id,
             'title': req.title,
@@ -419,7 +421,9 @@ def dashboard(request):
         } for req in recent_requests]
         
         # Urgent requests
-        urgent_requests = MaintenanceRequest.objects.filter(
+        urgent_requests = MaintenanceRequest.objects.select_related(
+            'equipment', 'requested_by', 'assigned_team'
+        ).filter(
             priority='urgent', 
             status__in=['pending', 'new', 'in_progress']
         )
@@ -476,7 +480,9 @@ def dashboard(request):
 @login_required
 def tickets_view(request):
     equipment_id = request.GET.get('equipment')
-    requests = MaintenanceRequest.objects.all().order_by('-created_at')
+    requests = MaintenanceRequest.objects.select_related(
+        'equipment', 'assigned_team', 'assigned_technician', 'requested_by'
+    ).order_by('-created_at')
     if equipment_id:
         requests = requests.filter(equipment_id=equipment_id)
     return render(request, 'tickets.html', {'requests': requests, 'selected_equipment_id': equipment_id})
