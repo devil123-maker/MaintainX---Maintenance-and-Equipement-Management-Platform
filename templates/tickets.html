@@ -22,9 +22,15 @@
       <nav class="sidebar__nav">
         <a href="{% url 'dashboard' %}" class="sidebar__link"><i class="fa-solid fa-gauge-high"></i> Dashboard</a>
         <a href="{% url 'tickets' %}" class="sidebar__link is-active"><i class="fa-solid fa-ticket"></i> Tickets</a>
+        {% if user.is_technician_user %}
+          <a href="{% url 'tickets' %}?tab=available" class="sidebar__link {% if active_tab == 'available' %}is-active{% endif %}"><i class="fa-solid fa-inbox"></i> Available Requests</a>
+          <a href="{% url 'tickets' %}?tab=active" class="sidebar__link {% if active_tab == 'active' %}is-active{% endif %}"><i class="fa-solid fa-list-check"></i> My Active Requests</a>
+        {% endif %}
         <a href="{% url 'calendar' %}" class="sidebar__link"><i class="fa-solid fa-calendar-days"></i> Calendar</a>
         <a href="{% url 'equipment_list' %}" class="sidebar__link"><i class="fa-solid fa-cubes"></i> Equipment</a>
-        <a href="{% url 'create_ticket' %}" class="sidebar__link"><i class="fa-solid fa-plus"></i> Create Ticket</a>
+        {% if not user.is_technician_user %}
+          <a href="{% url 'create_ticket' %}" class="sidebar__link"><i class="fa-solid fa-plus"></i> Create Ticket</a>
+        {% endif %}
         <a href="{% url 'workers' %}" class="sidebar__link"><i class="fa-solid fa-users"></i> Workers</a>
         <a href="{% url 'analytics' %}" class="sidebar__link"><i class="fa-solid fa-chart-line"></i> Analytics</a>
         <a href="{% url 'settings' %}" class="sidebar__link"><i class="fa-solid fa-gear"></i> Settings</a>
@@ -52,11 +58,22 @@
               <button type="button" class="view-btn is-active" data-view-target="table"><i class="fa-solid fa-list"></i> Table</button>
               <button type="button" class="view-btn" data-view-target="kanban"><i class="fa-solid fa-table-columns"></i> Kanban</button>
             </div>
-            <a href="{% url 'create_ticket' %}" class="btn btn--primary"><i class="fa-solid fa-plus"></i> New Ticket</a>
+            {% if not user.is_technician_user %}
+              <a href="{% url 'create_ticket' %}" class="btn btn--primary"><i class="fa-solid fa-plus"></i> New Ticket</a>
+            {% endif %}
           </div>
         </header>
 
         {% csrf_token %}
+
+        {% if user.is_technician_user %}
+        <div style="display:flex;gap:0.5rem;flex-wrap:wrap;margin-bottom:1rem;">
+          <a href="{% url 'tickets' %}" class="btn btn--sm {% if not active_tab %}btn--primary{% else %}btn--ghost{% endif %}">All Team Requests</a>
+          <a href="{% url 'tickets' %}?tab=available" class="btn btn--sm {% if active_tab == 'available' %}btn--primary{% else %}btn--ghost{% endif %}"><i class="fa-solid fa-inbox"></i> Available Requests</a>
+          <a href="{% url 'tickets' %}?tab=active" class="btn btn--sm {% if active_tab == 'active' %}btn--primary{% else %}btn--ghost{% endif %}"><i class="fa-solid fa-list-check"></i> My Active Requests</a>
+          <a href="{% url 'tickets' %}?tab=completed" class="btn btn--sm {% if active_tab == 'completed' %}btn--primary{% else %}btn--ghost{% endif %}"><i class="fa-solid fa-circle-check"></i> Completed Requests</a>
+        </div>
+        {% endif %}
 
         <div class="filter-bar">
           <div class="search-input-wrap">
@@ -84,7 +101,7 @@
                 <tr data-ticket-row data-status="{{ req.status }}" data-ticket-id="{{ req.id }}">
                   <td>TKT-{{ req.id }}</td>
                   <td>
-                    {{ req.title }}
+                    <a href="{% url 'request_detail' req.id %}" style="font-weight:600;color:var(--color-text);text-decoration:none;">{{ req.title }}</a>
                     {% if req.is_overdue %}
                       <span class="badge badge--overdue" style="font-size:0.7rem;margin-left:0.3rem;"><i class="fa-solid fa-triangle-exclamation"></i> Overdue</span>
                     {% endif %}
@@ -92,32 +109,55 @@
                   <td><span class="badge badge--ghost">{{ req.get_request_type_display|default:req.request_type|title }}</span></td>
                   <td>{{ req.equipment.name }}</td>
                   <td>
-                    {% if req.assigned_technician %}
-                      {{ req.assigned_technician.get_full_name|default:req.assigned_technician.username }}
-                    {% elif req.assigned_team %}
-                      {{ req.assigned_team.name }}
-                    {% else %}
-                      Unassigned
-                    {% endif %}
+                    <span data-row-tech>
+                      {% if req.assigned_technician %}
+                        {{ req.assigned_technician.get_full_name|default:req.assigned_technician.username }}
+                      {% elif req.assigned_team %}
+                        <span class="badge badge--ghost">Unassigned</span> ({{ req.assigned_team.name }})
+                      {% else %}
+                        <span class="badge badge--ghost">Unassigned</span>
+                      {% endif %}
+                    </span>
                   </td>
                   <td><span class="badge badge--{{ req.priority }}">{{ req.priority|title }}</span></td>
                   <td>
-                    {% if req.status == 'pending' or req.status == 'new' %}
-                      <span class="badge badge--open">{{ req.get_status_display|default:"New" }}</span>
-                    {% elif req.status == 'in_progress' %}
-                      <span class="badge badge--progress">In Progress</span>
-                    {% elif req.status == 'completed' or req.status == 'repaired' %}
-                      <span class="badge badge--resolved">{{ req.get_status_display|default:"Repaired" }}</span>
-                    {% elif req.status == 'scrap' %}
-                      <span class="badge badge--urgent">Scrap</span>
-                    {% else %}
-                      <span class="badge badge--urgent">{{ req.status|title }}</span>
+                    <span data-row-status>
+                      {% if req.status == 'pending' or req.status == 'new' %}
+                        <span class="badge badge--open">{{ req.get_status_display|default:"New" }}</span>
+                      {% elif req.status == 'in_progress' %}
+                        <span class="badge badge--progress">In Progress</span>
+                      {% elif req.status == 'completed' or req.status == 'repaired' %}
+                        <span class="badge badge--resolved">{{ req.get_status_display|default:"Repaired" }}</span>
+                      {% elif req.status == 'scrap' %}
+                        <span class="badge badge--urgent">Scrap</span>
+                      {% else %}
+                        <span class="badge badge--urgent">{{ req.status|title }}</span>
+                      {% endif %}
+                    </span>
+                    {% if req.user_can_join %}
+                      <button type="button" class="btn btn--sm btn--primary" data-join-request-btn data-ticket-id="{{ req.id }}" style="margin-left:0.5rem;padding:0.2rem 0.5rem;font-size:0.75rem;">
+                        <i class="fa-solid fa-hand-holding-hand"></i> Join
+                      </button>
+                    {% elif req.status == 'in_progress' and req.user_is_assigned %}
+                      <a href="{% url 'request_detail' req.id %}" class="btn btn--sm btn--secondary" data-open-ticket-btn style="margin-left:0.5rem;padding:0.2rem 0.5rem;font-size:0.75rem;">
+                        <i class="fa-solid fa-arrow-up-right-from-square"></i> Open
+                      </a>
+                      <button type="button" class="btn btn--sm btn--success" data-complete-request-btn data-ticket-id="{{ req.id }}" style="margin-left:0.3rem;padding:0.2rem 0.5rem;font-size:0.75rem;">
+                        <i class="fa-solid fa-check"></i> Repaired
+                      </button>
+                    {% elif req.status == 'in_progress' and req.user_can_repair %}
+                      <a href="{% url 'request_detail' req.id %}" class="btn btn--sm btn--secondary" data-open-ticket-btn style="margin-left:0.5rem;padding:0.2rem 0.5rem;font-size:0.75rem;">
+                        <i class="fa-solid fa-arrow-up-right-from-square"></i> Open
+                      </a>
+                      <button type="button" class="btn btn--sm btn--success" data-complete-request-btn data-ticket-id="{{ req.id }}" style="margin-left:0.3rem;padding:0.2rem 0.5rem;font-size:0.75rem;">
+                        <i class="fa-solid fa-check"></i> Repaired
+                      </button>
                     {% endif %}
                   </td>
                 </tr>
                 {% endfor %}
               {% else %}
-                <tr><td colspan="7" style="text-align:center;padding:1.5rem">No tickets found. <a href="{% url 'create_ticket' %}">Create one now</a></td></tr>
+                <tr><td colspan="7" style="text-align:center;padding:1.5rem">No tickets found.{% if not user.is_technician_user %} <a href="{% url 'create_ticket' %}">Create one now</a>{% endif %}</td></tr>
               {% endif %}
             </tbody>
           </table>
@@ -185,7 +225,6 @@
             </div>
           </div>
         </div>
-      </main>
       </main>
     </div>
   </div>

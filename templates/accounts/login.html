@@ -68,12 +68,18 @@
         {% if messages %} {% for message in messages %}
           <div class="message {{ message.tags }}">{{ message }}</div>
           {% endfor %} {% endif %}
-        <form method="post" autocomplete="off">
+        <form method="post">
           {% csrf_token %}
+          <!-- Hidden anti-autofill dummy traps to prevent aggressive browser autofill injection -->
+          <div style="opacity: 0; position: absolute; top: 0; left: -9999px; height: 0; width: 0; overflow: hidden; pointer-events: none;" aria-hidden="true">
+            <input type="text" name="prevent_autofill_username" tabindex="-1" autocomplete="username">
+            <input type="password" name="prevent_autofill_password" tabindex="-1" autocomplete="current-password">
+          </div>
+
           <div class="float-field">
             <label for="email">Email address</label>
             <div class="input-wrapper">
-              <input type="email" name="email" id="email" placeholder="Enter your email" required autocomplete="email" value="{{ remembered_email|default:'' }}">
+              <input type="email" name="email" id="email" placeholder="Enter your email" required autocomplete="email" value="{{ remembered_email|default:'' }}" data-initial-value="{{ remembered_email|default:'' }}" {% if not remember_checked %}readonly onfocus="this.removeAttribute('readonly');" onmousedown="this.removeAttribute('readonly');" ontouchstart="this.removeAttribute('readonly');"{% endif %}>
               <i class="fa-solid fa-envelope field-icon"></i>
             </div>
             
@@ -81,7 +87,7 @@
           <div class="float-field">
             <label for="password">Password</label>
             <div class="input-wrapper">
-              <input type="password" name="password" id="password" placeholder="Enter your password" required autocomplete="new-password" value="">
+              <input type="password" name="password" id="password" placeholder="Enter your password" required autocomplete="current-password" value="" readonly onfocus="this.removeAttribute('readonly');" onmousedown="this.removeAttribute('readonly');" ontouchstart="this.removeAttribute('readonly');">
               <button type="button" class="password-toggle-btn" aria-label="Toggle password visibility" data-password-toggle="password">
                 <i class="fa-solid fa-eye"></i>
               </button>
@@ -121,5 +127,55 @@
     </main>
   </div>
   <script src="{% static 'js/main.js'%}"></script>
+  <script>
+    document.addEventListener('DOMContentLoaded', function () {
+      var rememberBox = document.getElementById('remember');
+      var emailField = document.getElementById('email');
+      var passField = document.getElementById('password');
+
+      var isRemembered = rememberBox && rememberBox.checked;
+      var initialEmail = emailField ? (emailField.getAttribute('data-initial-value') || '') : '';
+
+      function cleanAutofill() {
+        if (!emailField || !passField) return;
+        // Do not alter fields if the user has already focused them
+        if (document.activeElement !== emailField && document.activeElement !== passField) {
+          if (!isRemembered) {
+            // Cases 1, 2, 3: Must be empty
+            if (emailField.value !== '') {
+              emailField.value = '';
+            }
+          } else {
+            // Case 4: Remembered email preserved
+            if (emailField.value !== initialEmail) {
+              emailField.value = initialEmail;
+            }
+          }
+          // Password must ALWAYS be empty on page load
+          if (passField.value !== '') {
+            passField.value = '';
+          }
+        }
+      }
+
+      cleanAutofill();
+      setTimeout(cleanAutofill, 50);
+      setTimeout(cleanAutofill, 150);
+      setTimeout(cleanAutofill, 300);
+      setTimeout(cleanAutofill, 600);
+    });
+
+    window.addEventListener('pageshow', function () {
+      var rememberBox = document.getElementById('remember');
+      var emailField = document.getElementById('email');
+      var passField = document.getElementById('password');
+      if (rememberBox && !rememberBox.checked) {
+        if (emailField && document.activeElement !== emailField) emailField.value = '';
+        if (passField && document.activeElement !== passField) passField.value = '';
+      } else if (rememberBox && rememberBox.checked && passField) {
+        if (document.activeElement !== passField) passField.value = '';
+      }
+    });
+  </script>
 </body>
 </html>

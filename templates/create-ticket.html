@@ -22,9 +22,15 @@
       <nav class="sidebar__nav">
         <a href="{% url 'dashboard' %}" class="sidebar__link"><i class="fa-solid fa-gauge-high"></i> Dashboard</a>
         <a href="{% url 'tickets' %}" class="sidebar__link"><i class="fa-solid fa-ticket"></i> Tickets</a>
+        {% if user.is_technician_user %}
+          <a href="{% url 'tickets' %}?tab=available" class="sidebar__link"><i class="fa-solid fa-inbox"></i> Available Requests</a>
+          <a href="{% url 'tickets' %}?tab=active" class="sidebar__link"><i class="fa-solid fa-list-check"></i> My Active Requests</a>
+        {% endif %}
         <a href="{% url 'calendar' %}" class="sidebar__link"><i class="fa-solid fa-calendar-days"></i> Calendar</a>
         <a href="{% url 'equipment_list' %}" class="sidebar__link"><i class="fa-solid fa-cubes"></i> Equipment</a>
-        <a href="{% url 'create_ticket' %}" class="sidebar__link is-active"><i class="fa-solid fa-plus"></i> Create Ticket</a>
+        {% if not user.is_technician_user %}
+          <a href="{% url 'create_ticket' %}" class="sidebar__link is-active"><i class="fa-solid fa-plus"></i> Create Ticket</a>
+        {% endif %}
         <a href="{% url 'workers' %}" class="sidebar__link"><i class="fa-solid fa-users"></i> Workers</a>
         <a href="{% url 'analytics' %}" class="sidebar__link"><i class="fa-solid fa-chart-line"></i> Analytics</a>
         <a href="{% url 'settings' %}" class="sidebar__link"><i class="fa-solid fa-gear"></i> Settings</a>
@@ -68,7 +74,7 @@
                   <select name="equipment" id="equipment" class="form-select" required>
                     <option value="">Select Equipment</option>
                     {% for eq in equipments %}
-                      <option value="{{ eq.id }}" {% if selected_equipment_id|slugify == eq.id|slugify %}selected{% endif %}>{{ eq.name }} ({{ eq.serial_number }})</option>
+                      <option value="{{ eq.id }}" data-team="{{ eq.maintenance_team.name|default:'General Maintenance' }}" {% if selected_equipment_id|slugify == eq.id|slugify %}selected{% endif %}>{{ eq.name }} ({{ eq.serial_number }})</option>
                     {% endfor %}
                   </select>
                 </div>
@@ -82,26 +88,40 @@
                   </select>
                 </div>
               </div>
-              <div class="form-row">
-                <div class="form-group">
-                  <label class="form-label" for="assigned_team">Maintenance Team</label>
-                  <select name="assigned_team" id="assigned_team" class="form-select">
-                    <option value="">Select Team (Optional)</option>
-                    {% for team in teams %}
-                      <option value="{{ team.id }}">{{ team.name }}</option>
-                    {% endfor %}
-                  </select>
+
+              {% if request.user.is_customer_user %}
+                <div class="form-row" id="customer-team-info-row" style="margin-bottom:1rem;">
+                  <div class="form-group" style="width:100%;">
+                    <label class="form-label">Responsible Maintenance Team</label>
+                    <div style="padding:0.6rem 0.85rem;background:var(--color-surface);border:1px solid var(--color-border);border-radius:var(--radius-md);display:flex;align-items:center;gap:0.6rem;">
+                      <i class="fa-solid fa-users-gear" style="color:var(--color-primary);"></i>
+                      <span id="detected-team-name" style="font-weight:500;color:var(--color-text);">Select an equipment to detect maintenance team</span>
+                    </div>
+                  </div>
                 </div>
-                <div class="form-group">
-                  <label class="form-label" for="assigned_technician">Assigned Technician</label>
-                  <select name="assigned_technician" id="assigned_technician" class="form-select">
-                    <option value="">Select Technician (Optional)</option>
-                    {% for tech in technicians %}
-                      <option value="{{ tech.id }}">{{ tech.get_full_name|default:tech.username }}</option>
-                    {% endfor %}
-                  </select>
+              {% else %}
+                <div class="form-row">
+                  <div class="form-group">
+                    <label class="form-label" for="assigned_team">Maintenance Team</label>
+                    <select name="assigned_team" id="assigned_team" class="form-select">
+                      <option value="">Select Team (Optional)</option>
+                      {% for team in teams %}
+                        <option value="{{ team.id }}">{{ team.name }}</option>
+                      {% endfor %}
+                    </select>
+                  </div>
+                  <div class="form-group">
+                    <label class="form-label" for="assigned_technician">Assigned Technician</label>
+                    <select name="assigned_technician" id="assigned_technician" class="form-select">
+                      <option value="">Select Technician (Optional)</option>
+                      {% for tech in technicians %}
+                        <option value="{{ tech.id }}">{{ tech.get_full_name|default:tech.username }}</option>
+                      {% endfor %}
+                    </select>
+                  </div>
                 </div>
-              </div>
+              {% endif %}
+
               <div class="form-row">
                 <div class="form-group">
                   <label class="form-label" for="scheduled_date">Scheduled Date</label>
@@ -134,5 +154,26 @@
     </div>
   </div>
   <script src="{% static 'js/main.js' %}"></script>
+  <script>
+    document.addEventListener("DOMContentLoaded", function () {
+      const eqSelect = document.getElementById("equipment");
+      const teamDisplay = document.getElementById("detected-team-name");
+      if (eqSelect && teamDisplay) {
+        function updateTeam() {
+          const selected = eqSelect.options[eqSelect.selectedIndex];
+          const team = selected ? selected.getAttribute("data-team") : null;
+          if (team && eqSelect.value) {
+            teamDisplay.textContent = team;
+            teamDisplay.style.color = "var(--color-text)";
+          } else {
+            teamDisplay.textContent = "Select an equipment to detect maintenance team";
+            teamDisplay.style.color = "var(--color-text-muted)";
+          }
+        }
+        eqSelect.addEventListener("change", updateTeam);
+        updateTeam();
+      }
+    });
+  </script>
 </body>
 </html>

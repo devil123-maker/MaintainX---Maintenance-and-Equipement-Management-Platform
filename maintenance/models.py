@@ -159,13 +159,10 @@ class MaintenanceRequest(models.Model):
                 if orig and orig.equipment_id != self.equipment_id:
                     raise ValidationError({'equipment': 'Cannot assign scrapped equipment to a maintenance request.'})
 
-        # 2. Auto-fill Maintenance Team & Default Technician from Equipment if omitted
+        # 2. Auto-fill Maintenance Team from Equipment if omitted
         if self.equipment_id:
             if not self.assigned_team_id and self.equipment.maintenance_team_id:
                 self.assigned_team = self.equipment.maintenance_team
-
-            if not self.assigned_technician_id and self.equipment.default_technician_id:
-                self.assigned_technician = self.equipment.default_technician
 
         # 3. Validate Equipment-Team Consistency
         if self.equipment_id and self.equipment.maintenance_team_id and self.assigned_team_id:
@@ -186,8 +183,15 @@ class MaintenanceRequest(models.Model):
                 terminal_statuses = ['completed', 'repaired', 'scrap', 'cancelled']
                 if orig.status in terminal_statuses:
                     raise ValidationError({'status': f'Cannot transition status from terminal state \'{orig.status}\' to \'{self.status}\'.'})
+                # Disallow direct jump from new/pending to repaired/completed
+                if orig.status in ['new', 'pending'] and self.status in ['repaired', 'completed']:
+                    raise ValidationError({'status': f'Cannot transition directly from \'{orig.status}\' to \'{self.status}\'. Ticket must be in progress first.'})
 
-        # 6. Sync duration_value and duration_unit with duration_hours
+        # 6. Validate that In Progress requires an assigned technician
+        if self.status == 'in_progress' and not self.assigned_technician_id:
+            raise ValidationError({'assigned_technician': 'Cannot move request to In Progress without an assigned technician.'})
+
+        # 7. Sync duration_value and duration_unit with duration_hours
         from decimal import Decimal
         if self.duration_value is not None:
             val = float(self.duration_value)
@@ -200,6 +204,27 @@ class MaintenanceRequest(models.Model):
         elif self.duration_hours is not None and self.duration_value is None:
             self.duration_value = self.duration_hours
             self.duration_unit = 'hours'
+
+    def can_technician_join(self, user):
+        """Reusable check: Can this technician see and join this maintenance request?"""
+        if not user or not user.is_authenticated:
+            return False
+        if not getattr(user, 'is_technician_user', False):
+            return False
+        if self.status not in ['new', 'pending']:
+            return False
+        if self.assigned_technician_id is not None:
+            return False
+        if not self.assigned_team_id:
+            return False
+        if self.equipment_id and self.equipment.status == 'scrapped':
+            return False
+        return self.assigned_team.members.filter(pk=user.pk).exists() or self.assigned_team.leader_id == user.pk
+
+    def is_assigned_to(self, user):
+        if not user or not user.is_authenticated:
+            return False
+        return self.assigned_technician_id == user.pk
 
     def save(self, *args, **kwargs):
         self.full_clean()

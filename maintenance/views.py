@@ -1,13 +1,104 @@
 from django.shortcuts import render, get_object_or_404, redirect
-from django.http import JsonResponse
+from django.http import JsonResponse, HttpResponseForbidden
 from django.contrib.auth.decorators import login_required
 from django.views.decorators.http import require_http_methods
+from django.views.decorators.csrf import ensure_csrf_cookie
 from django.core.exceptions import ValidationError
+from django.db import models, transaction
+from django.db.models import Q, Count, Avg
 import json
 from django.utils import timezone
 from .models import MaintenanceTeam, MaintenanceRequest, MaintenanceHistory
 from equipment.models import Equipment
 from accounts.models import User
+
+
+@login_required
+@require_http_methods(["POST"])
+def request_join(request, pk):
+    """
+    Dedicated atomic action for eligible technicians to claim/join an unassigned NEW request.
+    Enforces row locking with select_for_update() to prevent race conditions.
+    """
+    user = request.user
+    is_elevated = user.is_staff or user.is_superuser or user.user_type in ['admin', 'manager']
+    if not (user.is_technician_user or is_elevated):
+        return JsonResponse({
+            'success': False,
+            'error': 'Permission denied. Only technicians can join maintenance requests.'
+        }, status=403)
+
+    with transaction.atomic():
+        try:
+            maintenance_request = MaintenanceRequest.objects.select_for_update().get(pk=pk)
+        except MaintenanceRequest.DoesNotExist:
+            return JsonResponse({
+                'success': False,
+                'error': 'Maintenance request not found.'
+            }, status=404)
+
+        if maintenance_request.equipment and maintenance_request.equipment.status == 'scrapped':
+            return JsonResponse({
+                'success': False,
+                'error': 'Cannot join request for scrapped equipment.'
+            }, status=400)
+
+        if maintenance_request.assigned_technician_id is not None:
+            return JsonResponse({
+                'success': False,
+                'error': 'This request has already been claimed by another technician.'
+            }, status=409)
+
+        if maintenance_request.status not in ['new', 'pending']:
+            return JsonResponse({
+                'success': False,
+                'error': f"Cannot join request with status '{maintenance_request.status}'."
+            }, status=400)
+
+        if not maintenance_request.assigned_team:
+            return JsonResponse({
+                'success': False,
+                'error': 'This request does not have an assigned maintenance team.'
+            }, status=400)
+
+        is_member = maintenance_request.assigned_team.members.filter(pk=user.pk).exists()
+        is_leader = maintenance_request.assigned_team.leader_id == user.pk
+
+        if not (is_member or is_leader or is_elevated):
+            return JsonResponse({
+                'success': False,
+                'error': 'Permission denied. You are not a member of the maintenance team for this request.'
+            }, status=403)
+
+        maintenance_request.assigned_technician = user
+        maintenance_request.status = 'in_progress'
+        try:
+            maintenance_request.save()
+        except ValidationError as e:
+            return JsonResponse({
+                'success': False,
+                'error': e.message_dict if hasattr(e, 'message_dict') else str(e)
+            }, status=400)
+
+        tech_name = maintenance_request.assigned_technician.get_full_name() or maintenance_request.assigned_technician.first_name or maintenance_request.assigned_technician.username
+        return JsonResponse({
+            'success': True,
+            'message': 'Request joined successfully.',
+            'id': maintenance_request.id,
+            'status': maintenance_request.status,
+            'assigned_technician': maintenance_request.assigned_technician.id,
+            'assigned_technician_name': tech_name,
+            'request': {
+                'id': maintenance_request.id,
+                'title': maintenance_request.title,
+                'status': maintenance_request.status,
+                'assigned_technician': maintenance_request.assigned_technician.id,
+                'assigned_technician_name': tech_name,
+                'assigned_team': maintenance_request.assigned_team.name if maintenance_request.assigned_team else '',
+                'priority': maintenance_request.priority,
+                'equipment_name': maintenance_request.equipment.name if maintenance_request.equipment else ''
+            }
+        }, status=200)
 
 
 @login_required
@@ -128,7 +219,20 @@ def request_list(request):
         type_filter = request.GET.get('request_type')
         my_requests = request.GET.get('my_requests')
         
-        requests = MaintenanceRequest.objects.all()
+        user = request.user
+        if user.is_staff or user.is_superuser or user.user_type in ['admin', 'manager']:
+            requests = MaintenanceRequest.objects.all()
+        elif user.is_technician_user:
+            requests = MaintenanceRequest.objects.filter(
+                Q(assigned_team__members=user) |
+                Q(assigned_team__leader=user) |
+                Q(assigned_technician=user) |
+                Q(requested_by=user)
+            ).distinct()
+        elif user.is_customer_user:
+            requests = MaintenanceRequest.objects.filter(requested_by=user)
+        else:
+            requests = MaintenanceRequest.objects.filter(requested_by=user)
         
         if status_filter:
             requests = requests.filter(status=status_filter)
@@ -158,12 +262,36 @@ def request_list(request):
         return JsonResponse({'requests': data})
     
     elif request.method == 'POST':
+        user = request.user
+        is_elevated = user.is_staff or user.is_superuser or user.user_type in ['admin', 'manager']
         data = json.loads(request.body)
+
+        # Block technicians from creating normal customer corrective tickets
+        if user.is_technician_user and not is_elevated:
+            if data.get('request_type', 'corrective') == 'corrective':
+                return JsonResponse({'error': 'Permission denied. Technicians cannot create customer corrective tickets.'}, status=403)
+
+        if user.is_customer_user and data.get('assigned_technician'):
+            return JsonResponse({'error': 'Customers cannot assign technicians.'}, status=403)
         try:
+            equipment = get_object_or_404(Equipment, id=data['equipment'])
+            if equipment.status == 'scrapped':
+                return JsonResponse({'error': {'equipment': ['Cannot create a new maintenance request for scrapped equipment.']}}, status=400)
+
+            # Customer corrective request: team derived from equipment, tech unassigned
+            if user.is_customer_user:
+                assigned_team_id = equipment.maintenance_team_id
+                assigned_technician_id = None
+                initial_status = 'new'
+            else:
+                assigned_team_id = data.get('assigned_team') or equipment.maintenance_team_id
+                assigned_technician_id = data.get('assigned_technician')
+                initial_status = data.get('status', 'new')
+
             maintenance_request = MaintenanceRequest.objects.create(
                 title=data['title'],
                 description=data['description'],
-                equipment_id=data['equipment'],
+                equipment=equipment,
                 requested_by=request.user,
                 priority=data.get('priority', 'medium'),
                 request_type=data.get('request_type', 'corrective'),
@@ -171,13 +299,10 @@ def request_list(request):
                 duration_hours=data.get('duration_hours'),
                 duration_value=data.get('duration_value'),
                 duration_unit=data.get('duration_unit', 'minutes'),
-                assigned_technician_id=data.get('assigned_technician'),
-                status='pending'
+                assigned_team_id=assigned_team_id,
+                assigned_technician_id=assigned_technician_id,
+                status=initial_status
             )
-            if data.get('assigned_team'):
-                maintenance_request.assigned_team_id = data['assigned_team']
-                maintenance_request.status = 'in_progress'
-                maintenance_request.save()
             return JsonResponse({
                 'id': maintenance_request.id,
                 'title': maintenance_request.title,
@@ -229,15 +354,80 @@ def request_detail(request, pk):
             'duration_display': maintenance_request.duration_display,
             'scheduled_date': maintenance_request.scheduled_date,
             'completed_date': maintenance_request.completed_date,
+            'can_join': maintenance_request.can_technician_join(request.user),
             'created_at': maintenance_request.created_at,
             'updated_at': maintenance_request.updated_at
         }
+        wants_html = (
+            request.headers.get('Sec-Fetch-Dest') == 'document' or
+            request.headers.get('Sec-Fetch-Mode') == 'navigate' or
+            request.GET.get('view') == 'html' or
+            request.GET.get('format') == 'html'
+        )
+        if wants_html:
+            user = request.user
+            is_elevated = user.is_staff or user.is_superuser or user.user_type in ['admin', 'manager']
+            user_teams = set()
+            if user.is_technician_user:
+                user_teams = set(user.teams.values_list('id', flat=True)) | set(user.led_teams.values_list('id', flat=True))
+            is_team_member = maintenance_request.assigned_team_id in user_teams if maintenance_request.assigned_team_id else False
+
+            user_can_join = (
+                user.is_technician_user and
+                maintenance_request.status in ['new', 'pending'] and
+                maintenance_request.assigned_technician_id is None and
+                is_team_member and
+                (not maintenance_request.equipment or maintenance_request.equipment.status != 'scrapped')
+            )
+            user_is_assigned = (maintenance_request.assigned_technician_id == user.id)
+            user_can_repair = (user_is_assigned or is_elevated)
+            history = maintenance_request.history.select_related('performed_by').order_by('-created_at')
+
+            context = {
+                'maintenance_request': maintenance_request,
+                'req': maintenance_request,
+                'user_can_join': user_can_join,
+                'user_is_assigned': user_is_assigned,
+                'user_can_repair': user_can_repair,
+                'history': history,
+            }
+            return render(request, 'ticket_detail.html', context)
+
         return JsonResponse(data)
     
     elif request.method == 'PUT':
         if not request.user.can_edit_request(maintenance_request):
             return JsonResponse({'error': 'Permission denied. You are not authorized to update this request.'}, status=403)
         data = json.loads(request.body)
+        is_elevated = request.user.is_staff or request.user.is_superuser or request.user.user_type in ['admin', 'manager']
+
+        # Guard 1: Customer cannot change status, team, technician
+        if request.user.is_customer_user:
+            if 'status' in data or 'assigned_technician' in data or 'assigned_team' in data:
+                return JsonResponse({'error': 'Permission denied. Customers cannot change ticket status, team, or technician.'}, status=403)
+
+        # Guard 2: Generic PUT cannot reassign technician unless manager/admin
+        if 'assigned_technician' in data and not is_elevated:
+            return JsonResponse({'error': 'Permission denied. Technicians must use the Join Request action.'}, status=403)
+
+        # Guard 3: Moving to in_progress
+        if data.get('status') == 'in_progress':
+            target_tech = data.get('assigned_technician') or maintenance_request.assigned_technician_id
+            if not target_tech:
+                return JsonResponse({'error': 'Cannot move unassigned request to In Progress. Please use the Join Request button.'}, status=400)
+            if not is_elevated and maintenance_request.assigned_technician_id and maintenance_request.assigned_technician_id != request.user.id:
+                return JsonResponse({'error': 'Permission denied. This ticket is assigned to another technician.'}, status=403)
+
+        # Guard 4: Repaired / completed transitions
+        if data.get('status') in ['repaired', 'completed']:
+            is_assigned_tech = (maintenance_request.assigned_technician_id == request.user.id)
+            if not (is_assigned_tech or is_elevated):
+                return JsonResponse({'error': 'Permission denied. Only the assigned technician or an authorized manager can mark this request as repaired.'}, status=403)
+
+        # Guard 5: Scrap transitions
+        if data.get('status') == 'scrap' and not is_elevated:
+            return JsonResponse({'error': 'Permission denied. Only managers or admins can scrap equipment.'}, status=403)
+
         try:
             maintenance_request.title = data.get('title', maintenance_request.title)
             maintenance_request.description = data.get('description', maintenance_request.description)
@@ -251,7 +441,7 @@ def request_detail(request, pk):
             if 'duration_unit' in data:
                 maintenance_request.duration_unit = data['duration_unit']
             if 'assigned_team' in data:
-                if not request.user.can_assign_requests:
+                if not is_elevated:
                     return JsonResponse({'error': 'Permission denied. Only admins or team leaders can reassign teams.'}, status=403)
                 maintenance_request.assigned_team_id = data['assigned_team']
             if 'assigned_technician' in data:
@@ -281,7 +471,8 @@ def request_assign_team(request, pk):
         try:
             team = MaintenanceTeam.objects.get(id=team_id)
             maintenance_request.assigned_team = team
-            maintenance_request.status = 'in_progress'
+            if maintenance_request.assigned_technician_id:
+                maintenance_request.status = 'in_progress'
             maintenance_request.save()
             return JsonResponse({'message': 'Team assigned successfully'})
         except MaintenanceTeam.DoesNotExist:
@@ -293,26 +484,81 @@ def request_assign_team(request, pk):
 @login_required
 def request_complete(request, pk):
     maintenance_request = get_object_or_404(MaintenanceRequest, pk=pk)
-    if not request.user.can_edit_request(maintenance_request):
-        return JsonResponse({'error': 'Permission denied.'}, status=403)
+    is_assigned_tech = (maintenance_request.assigned_technician_id == request.user.id)
+    is_elevated = request.user.is_staff or request.user.is_superuser or request.user.user_type in ['admin', 'manager']
+    is_json = (
+        request.content_type == 'application/json' or
+        (request.body and request.body.startswith(b'{')) or
+        request.headers.get('Accept') == 'application/json'
+    )
+    if not (is_assigned_tech or is_elevated):
+        if is_json:
+            return JsonResponse({
+                'success': False,
+                'error': 'Permission denied. Only the assigned technician or a manager can mark this request as repaired.'
+            }, status=403)
+        return HttpResponseForbidden('Permission denied. Only the assigned technician or a manager can mark this request as repaired.')
+
     if request.method == 'POST':
-        data = json.loads(request.body)
+        if is_json:
+            data = json.loads(request.body) if request.body else {}
+        else:
+            data = request.POST.dict()
+
+        if maintenance_request.status != 'in_progress':
+            err_msg = f"Cannot complete a request that is in '{maintenance_request.status}' status. It must be in progress."
+            if is_json:
+                return JsonResponse({
+                    'success': False,
+                    'error': err_msg
+                }, status=400)
+            from django.contrib import messages
+            messages.error(request, err_msg)
+            return redirect('request_detail', pk=maintenance_request.id)
+
         try:
-            maintenance_request.status = 'completed'
+            target_status = data.get('status') or 'repaired'
+            maintenance_request.status = target_status
             maintenance_request.completed_date = timezone.now().date()
+            if data.get('duration_hours') is not None and data.get('duration_hours') != '':
+                maintenance_request.duration_hours = data['duration_hours']
+            if data.get('duration_value') is not None and data.get('duration_value') != '':
+                maintenance_request.duration_value = data['duration_value']
+            if data.get('duration_unit'):
+                maintenance_request.duration_unit = data['duration_unit']
             maintenance_request.save()
             
+            notes = data.get('notes') or 'Completed by assigned technician'
+            cost = data.get('cost') or None
+            if cost == '':
+                cost = None
+            parts_used = data.get('parts_used', '')
             MaintenanceHistory.objects.create(
                 maintenance_request=maintenance_request,
                 performed_by=request.user,
-                notes=data.get('notes', ''),
-                cost=data.get('cost'),
-                parts_used=data.get('parts_used', '')
+                notes=notes,
+                cost=cost,
+                parts_used=parts_used
             )
             
-            return JsonResponse({'message': 'Maintenance request completed'})
+            if is_json:
+                return JsonResponse({
+                    'success': True,
+                    'message': 'Maintenance request completed',
+                    'status': maintenance_request.status
+                })
+            from django.contrib import messages
+            messages.success(request, f"Request TKT-{maintenance_request.id} has been marked as repaired.")
+            return redirect('request_detail', pk=maintenance_request.id)
         except ValidationError as e:
-            return JsonResponse({'error': e.message_dict if hasattr(e, 'message_dict') else str(e)}, status=400)
+            if is_json:
+                return JsonResponse({
+                    'success': False,
+                    'error': e.message_dict if hasattr(e, 'message_dict') else str(e)
+                }, status=400)
+            from django.contrib import messages
+            messages.error(request, str(e))
+            return redirect('request_detail', pk=maintenance_request.id)
 
 
 @login_required
@@ -478,18 +724,72 @@ def dashboard(request):
 
 
 @login_required
+@ensure_csrf_cookie
 def tickets_view(request):
     equipment_id = request.GET.get('equipment')
-    requests = MaintenanceRequest.objects.select_related(
+    tab = request.GET.get('tab')
+    user = request.user
+
+    if user.is_staff or user.is_superuser or user.user_type in ['admin', 'manager']:
+        requests = MaintenanceRequest.objects.all()
+    elif user.is_technician_user:
+        requests = MaintenanceRequest.objects.filter(
+            Q(assigned_team__members=user) |
+            Q(assigned_team__leader=user) |
+            Q(assigned_technician=user) |
+            Q(requested_by=user)
+        ).distinct()
+    elif user.is_customer_user:
+        requests = MaintenanceRequest.objects.filter(requested_by=user)
+    else:
+        requests = MaintenanceRequest.objects.filter(requested_by=user)
+
+    if tab == 'available' and user.is_technician_user:
+        requests = requests.filter(status__in=['new', 'pending'], assigned_technician__isnull=True).exclude(equipment__status='scrapped')
+    elif tab == 'active' and user.is_technician_user:
+        requests = requests.filter(status='in_progress', assigned_technician=user)
+    elif tab == 'completed':
+        requests = requests.filter(status__in=['completed', 'repaired'])
+
+    requests = requests.select_related(
         'equipment', 'assigned_team', 'assigned_technician', 'requested_by'
     ).order_by('-created_at')
+
     if equipment_id:
         requests = requests.filter(equipment_id=equipment_id)
-    return render(request, 'tickets.html', {'requests': requests, 'selected_equipment_id': equipment_id})
+
+    requests_list = list(requests)
+    user_teams = set()
+    if user.is_technician_user:
+        user_teams = set(user.teams.values_list('id', flat=True)) | set(user.led_teams.values_list('id', flat=True))
+    is_elevated = user.is_staff or user.is_superuser or user.user_type in ['admin', 'manager']
+
+    for req in requests_list:
+        is_team_member = req.assigned_team_id in user_teams if req.assigned_team_id else False
+        req.user_can_join = (
+            user.is_technician_user and
+            req.status in ['new', 'pending'] and
+            req.assigned_technician_id is None and
+            is_team_member and
+            (not req.equipment or req.equipment.status != 'scrapped')
+        )
+        req.user_is_assigned = (req.assigned_technician_id == user.id)
+        req.user_can_repair = (req.user_is_assigned or is_elevated)
+
+    return render(request, 'tickets.html', {
+        'requests': requests_list,
+        'selected_equipment_id': equipment_id,
+        'active_tab': tab
+    })
 
 
 @login_required
 def create_ticket_view(request):
+    user = request.user
+    is_elevated = user.is_staff or user.is_superuser or user.user_type in ['admin', 'manager']
+    if user.is_technician_user and not is_elevated:
+        return HttpResponseForbidden("Permission denied. Technicians cannot create customer maintenance requests.")
+
     selected_equipment_id = request.GET.get('equipment')
     if request.method == 'POST':
         title = request.POST.get('title')
@@ -498,14 +798,20 @@ def create_ticket_view(request):
         priority = request.POST.get('priority', 'medium')
         request_type = request.POST.get('request_type', 'corrective')
         scheduled_date = request.POST.get('scheduled_date')
-        assigned_team_id = request.POST.get('assigned_team')
-        assigned_technician_id = request.POST.get('assigned_technician')
         duration_hours = request.POST.get('duration_hours')
         duration_value = request.POST.get('duration_value')
         duration_unit = request.POST.get('duration_unit', 'minutes')
         
         if title and description and equipment_id:
             try:
+                equipment = get_object_or_404(Equipment, id=equipment_id)
+                if user.is_customer_user:
+                    assigned_team_id = equipment.maintenance_team_id
+                    assigned_technician_id = None
+                else:
+                    assigned_team_id = request.POST.get('assigned_team') or equipment.maintenance_team_id
+                    assigned_technician_id = request.POST.get('assigned_technician') or None
+
                 MaintenanceRequest.objects.create(
                     title=title,
                     description=description,
@@ -513,16 +819,17 @@ def create_ticket_view(request):
                     requested_by=request.user,
                     priority=priority,
                     request_type=request_type,
+                    status='new',
                     scheduled_date=scheduled_date if scheduled_date else None,
-                    assigned_team_id=assigned_team_id if assigned_team_id else None,
-                    assigned_technician_id=assigned_technician_id if assigned_technician_id else None,
+                    assigned_team_id=assigned_team_id,
+                    assigned_technician_id=assigned_technician_id,
                     duration_hours=duration_hours if duration_hours else None,
                     duration_value=duration_value if duration_value else None,
                     duration_unit=duration_unit
                 )
                 return redirect('tickets')
             except ValidationError as e:
-                equipments = Equipment.objects.all()
+                equipments = Equipment.objects.exclude(status='scrapped')
                 teams = MaintenanceTeam.objects.all()
                 technicians = User.objects.filter(user_type='technician')
                 error_msg = e.messages[0] if hasattr(e, 'messages') else str(e)
@@ -534,7 +841,7 @@ def create_ticket_view(request):
                     'selected_equipment_id': equipment_id
                 })
             
-    equipments = Equipment.objects.all()
+    equipments = Equipment.objects.exclude(status='scrapped')
     teams = MaintenanceTeam.objects.all()
     technicians = User.objects.filter(user_type='technician')
     return render(request, 'create-ticket.html', {
@@ -601,6 +908,14 @@ def analytics_view(request):
             count=Count('id')
         ))
 
+        tech_stats_raw = list(MaintenanceRequest.objects.values('assigned_technician__first_name', 'assigned_technician__username').annotate(
+            count=Count('id')
+        ))
+        tech_stats = []
+        for item in tech_stats_raw:
+            name = item.get('assigned_technician__first_name') or item.get('assigned_technician__username') or 'Unassigned'
+            tech_stats.append({'technician': name, 'count': item['count']})
+
         now = timezone.now().date()
         months = []
         for i in range(5, -1, -1):
@@ -633,6 +948,7 @@ def analytics_view(request):
             'by_type': type_stats,
             'by_status': status_stats,
             'by_priority': priority_stats,
+            'by_technician': tech_stats,
             'monthly_trends': monthly_trends
         })
 

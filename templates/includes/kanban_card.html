@@ -3,7 +3,7 @@
     <span class="kanban-card__id">TKT-{{ req.id }}</span>
     <span class="badge badge--{{ req.priority }}">{{ req.priority|title }}</span>
   </div>
-  <div class="kanban-card__title">{{ req.title }}</div>
+  <div class="kanban-card__title"><a href="{% url 'request_detail' req.id %}" style="color:inherit;text-decoration:none;">{{ req.title }}</a></div>
   <div class="kanban-card__meta">
     <div class="kanban-card__meta-item">
       <i class="fa-solid fa-screwdriver-wrench"></i>
@@ -15,16 +15,20 @@
     </div>
     <div class="kanban-card__meta-item">
       <i class="fa-solid fa-user-gear"></i>
-      <span>
+      <span data-card-tech-label>
         {% if req.assigned_technician %}
           {{ req.assigned_technician.get_full_name|default:req.assigned_technician.username }}
-        {% elif req.assigned_team %}
-          {{ req.assigned_team.name }}
         {% else %}
-          Unassigned
+          <span class="badge badge--ghost" style="font-size:0.75rem;">Unassigned</span>
         {% endif %}
       </span>
     </div>
+    {% if req.assigned_team %}
+      <div class="kanban-card__meta-item">
+        <i class="fa-solid fa-users-gear"></i>
+        <span>{{ req.assigned_team.name }}</span>
+      </div>
+    {% endif %}
     {% if req.scheduled_date %}
       <div class="kanban-card__meta-item">
         <i class="fa-regular fa-calendar"></i>
@@ -40,6 +44,31 @@
     {% if req.is_overdue %}
       <div class="kanban-card__meta-item" style="margin-top:0.25rem;">
         <span class="badge badge--overdue"><i class="fa-solid fa-triangle-exclamation"></i> Overdue</span>
+      </div>
+    {% endif %}
+  </div>
+  <div class="kanban-card__actions" style="margin-top:0.5rem;" data-card-actions>
+    {% if req.user_can_join %}
+      <button type="button" class="btn btn--sm btn--primary" data-join-request-btn data-ticket-id="{{ req.id }}" style="width:100%;">
+        <i class="fa-solid fa-hand-holding-hand"></i> Join Request
+      </button>
+    {% elif req.status == 'in_progress' and req.user_is_assigned %}
+      <div style="display:flex;gap:0.4rem;flex-direction:column;width:100%;">
+        <a href="{% url 'request_detail' req.id %}" class="btn btn--sm btn--secondary" data-open-ticket-btn style="width:100%;text-align:center;">
+          <i class="fa-solid fa-arrow-up-right-from-square"></i> Open / Continue Work
+        </a>
+        <button type="button" class="btn btn--sm btn--success" data-complete-request-btn data-ticket-id="{{ req.id }}" style="width:100%;">
+          <i class="fa-solid fa-check"></i> Mark as Repaired
+        </button>
+      </div>
+    {% elif req.status == 'in_progress' and req.user_can_repair %}
+      <div style="display:flex;gap:0.4rem;flex-direction:column;width:100%;">
+        <a href="{% url 'request_detail' req.id %}" class="btn btn--sm btn--secondary" data-open-ticket-btn style="width:100%;text-align:center;">
+          <i class="fa-solid fa-arrow-up-right-from-square"></i> Open Ticket
+        </a>
+        <button type="button" class="btn btn--sm btn--success" data-complete-request-btn data-ticket-id="{{ req.id }}" style="width:100%;">
+          <i class="fa-solid fa-check"></i> Mark as Repaired
+        </button>
       </div>
     {% endif %}
   </div>
