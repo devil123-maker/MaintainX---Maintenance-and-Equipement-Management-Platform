@@ -43,26 +43,34 @@
       </header>
       <main class="page-content">
         <header class="page-header">
-          <div><h1>Analytics</h1><p>Performance metrics and maintenance insights</p></div>
+          <div><h1><i class="fa-solid fa-chart-line" style="color:var(--color-primary);"></i> Advanced Analytics & Reporting</h1><p>Real-time metrics across teams, equipment, request types, and statuses</p></div>
         </header>
         <div class="kpi-grid">
-          <div class="card kpi-item"><div class="kpi-item__value">4.2h</div><div class="kpi-item__label">Avg. Resolution</div></div>
-          <div class="card kpi-item"><div class="kpi-item__value">92%</div><div class="kpi-item__label">SLA Compliance</div></div>
-          <div class="card kpi-item"><div class="kpi-item__value">156</div><div class="kpi-item__label">Tickets This Month</div></div>
-          <div class="card kpi-item"><div class="kpi-item__value">87%</div><div class="kpi-item__label">First-time Fix Rate</div></div>
+          <div class="card kpi-item"><div class="kpi-item__value" id="kpi-avg-resolution">--</div><div class="kpi-item__label">Avg. Resolution</div></div>
+          <div class="card kpi-item"><div class="kpi-item__value" id="kpi-sla-compliance">--</div><div class="kpi-item__label">SLA Compliance</div></div>
+          <div class="card kpi-item"><div class="kpi-item__value" id="kpi-total-requests">--</div><div class="kpi-item__label">Total Requests</div></div>
+          <div class="card kpi-item"><div class="kpi-item__value" id="kpi-completed-requests">--</div><div class="kpi-item__label">Completed Requests</div></div>
         </div>
-        <div class="analytics-grid">
-          <section class="card chart-card chart-card--wide card__body">
-            <h3 class="card__title" style="margin-bottom:1rem">Ticket Trends</h3>
-            <div style="height:280px"><canvas id="chart-trends"></canvas></div>
+        <div class="analytics-grid" style="display:grid;grid-template-columns:repeat(auto-fit, minmax(320px, 1fr));gap:1.5rem;margin-top:1.5rem;">
+          <section class="card chart-card chart-card--wide card__body" style="grid-column: 1 / -1;">
+            <h3 class="card__title" style="margin-bottom:1rem"><i class="fa-solid fa-arrow-trend-up"></i> Maintenance Ticket Trends</h3>
+            <div style="height:300px"><canvas id="chart-trends"></canvas></div>
           </section>
           <section class="card chart-card card__body">
-            <h3 class="card__title" style="margin-bottom:1rem">Resolution Status</h3>
+            <h3 class="card__title" style="margin-bottom:1rem"><i class="fa-solid fa-chart-pie"></i> Resolution Status Breakdown</h3>
             <div style="height:280px"><canvas id="chart-resolution"></canvas></div>
           </section>
           <section class="card chart-card card__body">
-            <h3 class="card__title" style="margin-bottom:1rem">Weekly Efficiency</h3>
-            <div style="height:280px"><canvas id="chart-efficiency"></canvas></div>
+            <h3 class="card__title" style="margin-bottom:1rem"><i class="fa-solid fa-users-gear"></i> Performance By Team</h3>
+            <div style="height:280px"><canvas id="chart-team-performance"></canvas></div>
+          </section>
+          <section class="card chart-card card__body">
+            <h3 class="card__title" style="margin-bottom:1rem"><i class="fa-solid fa-cubes"></i> Equipment Category Volume</h3>
+            <div style="height:280px"><canvas id="chart-category"></canvas></div>
+          </section>
+          <section class="card chart-card card__body">
+            <h3 class="card__title" style="margin-bottom:1rem"><i class="fa-solid fa-list-check"></i> Request Types (Corrective vs Preventive)</h3>
+            <div style="height:280px"><canvas id="chart-type"></canvas></div>
           </section>
         </div>
       </main>

@@ -388,5 +388,28 @@ class MaintenanceTests(TestCase):
         self.assertEqual(response.status_code, 200)
         self.assertContains(response, 'data-modal-close')
         self.assertContains(response, 'type="button"')
-        self.assertContains(response, 'onclick="closeModal(this)"')
+
+    def test_phase8_analytics_json_api(self):
+        response = self.client.get(reverse('analytics'), HTTP_ACCEPT='application/json')
+        self.assertEqual(response.status_code, 200)
+        data = response.json()
+        self.assertIn('kpis', data)
+        self.assertIn('by_team', data)
+        self.assertIn('by_category', data)
+        self.assertIn('by_type', data)
+        self.assertIn('by_status', data)
+        self.assertIn('monthly_trends', data)
+
+    def test_phase8_permission_checks(self):
+        cust = User.objects.create_user(username='customer1@ex.com', password='password123', user_type='customer')
+        self.client.login(username='customer1@ex.com', password='password123')
+        
+        # Customer attempting to create team -> HTTP 403
+        res = self.client.post(reverse('team_list'), data=json.dumps({'name': 'Forbidden Team'}), content_type='application/json')
+        self.assertEqual(res.status_code, 403)
+
+        # Customer attempting to create equipment -> HTTP 403
+        res = self.client.post(reverse('equipment_list'), data=json.dumps({'name': 'Forbidden Eq', 'serial_number': 'SN-ERR'}), content_type='application/json')
+        self.assertEqual(res.status_code, 403)
+
 

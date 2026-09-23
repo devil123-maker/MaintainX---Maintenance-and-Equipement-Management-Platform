@@ -107,4 +107,20 @@ class AccountsTests(TestCase):
         self.assertContains(response, 'saved@example.com')
         self.assertContains(response, 'checked')
 
+    def test_user_roles_and_permission_helpers(self):
+        admin = User.objects.create_user(username='admin', email='admin@ex.com', user_type='admin', is_staff=True)
+        tech = User.objects.create_user(username='tech', email='tech@ex.com', user_type='technician')
+        cust = User.objects.create_user(username='cust', email='cust@ex.com', user_type='customer')
+
+        self.assertTrue(admin.is_admin_user)
+        self.assertTrue(admin.can_manage_equipment)
+        self.assertTrue(admin.can_assign_requests)
+
+        self.assertTrue(tech.is_technician_user)
+        self.assertTrue(tech.can_manage_equipment)
+
+        self.assertTrue(cust.is_customer_user)
+        self.assertFalse(cust.can_manage_equipment)
+
+
 

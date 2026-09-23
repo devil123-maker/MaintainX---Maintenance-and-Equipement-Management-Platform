@@ -24,7 +24,7 @@ class User(AbstractUser):
 
     @property
     def is_admin_user(self):
-        return self.is_staff or self.is_superuser or self.user_type in ['admin', 'manager']
+        return self.is_staff or self.is_superuser or self.user_type in ['admin', 'manager', 'technician']
 
     @property
     def is_technician_user(self):
@@ -40,11 +40,11 @@ class User(AbstractUser):
 
     @property
     def can_manage_equipment(self):
-        return self.is_admin_user
+        return self.is_staff or self.is_superuser or self.user_type in ['admin', 'manager', 'technician']
 
     @property
     def can_assign_requests(self):
-        return self.is_admin_user or self.is_team_leader
+        return self.is_staff or self.is_superuser or self.user_type in ['admin', 'manager', 'technician'] or self.is_team_leader
 
     def can_edit_request(self, request_obj):
         if self.is_admin_user:
