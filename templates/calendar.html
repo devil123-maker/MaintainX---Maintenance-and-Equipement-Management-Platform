@@ -23,6 +23,7 @@
         <a href="{% url 'dashboard' %}" class="sidebar__link"><i class="fa-solid fa-gauge-high"></i> Dashboard</a>
         <a href="{% url 'tickets' %}" class="sidebar__link"><i class="fa-solid fa-ticket"></i> Tickets</a>
         <a href="{% url 'calendar' %}" class="sidebar__link is-active"><i class="fa-solid fa-calendar-days"></i> Calendar</a>
+        <a href="{% url 'equipment_list' %}" class="sidebar__link"><i class="fa-solid fa-cubes"></i> Equipment</a>
         <a href="{% url 'create_ticket' %}" class="sidebar__link"><i class="fa-solid fa-plus"></i> Create Ticket</a>
         <a href="{% url 'workers' %}" class="sidebar__link"><i class="fa-solid fa-users"></i> Workers</a>
         <a href="{% url 'analytics' %}" class="sidebar__link"><i class="fa-solid fa-chart-line"></i> Analytics</a>
@@ -85,7 +86,9 @@
     <div class="modal" style="max-width:600px;">
       <div class="modal__header">
         <h3 class="modal__title"><i class="fa-solid fa-calendar-plus"></i> Schedule Preventive Maintenance</h3>
-        <button class="modal__close" data-modal-close>&times;</button>
+        <button type="button" class="modal__close" data-modal-close aria-label="Close modal">
+    <i class="fa-solid fa-xmark"></i>
+</button>
       </div>
       <form id="schedule-preventive-form">
         <div class="modal__body">
@@ -122,8 +125,15 @@
               <input type="date" name="scheduled_date" id="cal_scheduled_date" class="form-input" required>
             </div>
             <div class="form-group">
-              <label class="form-label" for="cal_duration_hours">Duration (Hours)</label>
-              <input type="number" name="duration_hours" id="cal_duration_hours" class="form-input" placeholder="e.g. 2.0" step="0.25" min="0">
+              <label class="form-label" for="cal_duration_value">Duration (Optional)</label>
+              <div style="display:flex;gap:0.5rem;">
+                <input type="number" name="duration_value" id="cal_duration_value" class="form-input" placeholder="e.g. 15 or 1" step="any" min="0" style="flex:1;">
+                <select name="duration_unit" id="cal_duration_unit" class="form-select" style="width:130px;">
+                  <option value="minutes" selected>Minutes</option>
+                  <option value="hours">Hours</option>
+                  <option value="days">Days</option>
+                </select>
+              </div>
             </div>
           </div>
 
@@ -154,7 +164,9 @@
           </div>
         </div>
         <div class="modal__footer">
-          <button type="button" class="btn btn--secondary" data-modal-close>Cancel</button>
+         <button type="button" class="btn btn--secondary" data-modal-close>
+    Cancel
+</button>
           <button type="submit" class="btn btn--primary">Schedule Request</button>
         </div>
       </form>
@@ -166,7 +178,9 @@
     <div class="modal" style="max-width:550px;">
       <div class="modal__header">
         <h3 class="modal__title" id="event-modal-title"><i class="fa-solid fa-calendar-check"></i> Event Details</h3>
-        <button class="modal__close" data-modal-close>&times;</button>
+        <button type="button" class="modal__close" data-modal-close aria-label="Close modal">
+    <i class="fa-solid fa-xmark"></i>
+</button>
       </div>
       <div class="modal__body">
         <div id="event-modal-body-content"></div>
@@ -187,7 +201,9 @@
       </div>
       <div class="modal__footer">
         <a id="event-view-detail-link" href="#" class="btn btn--secondary"><i class="fa-solid fa-arrow-right-from-bracket"></i> Open in Tickets</a>
-        <button type="button" class="btn btn--ghost" data-modal-close>Close</button>
+        <button type="button" class="btn btn--ghost" data-modal-close>
+    Close
+</button>
       </div>
     </div>
   </div>

@@ -1,0 +1,173 @@
+{% load static %}
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>{{ equipment.name }} — Maintenance & Work Orders — MaintainX</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&family=Poppins:wght@600;700&display=swap" rel="stylesheet">
+  <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.5.1/css/all.min.css">
+  <link rel="stylesheet" href="{% static 'css/variables.css' %}">
+  <link rel="stylesheet" href="{% static 'css/base.css' %}">
+  <link rel="stylesheet" href="{% static 'css/components.css' %}">
+  <link rel="stylesheet" href="{% static 'css/layout.css' %}">
+  <script>(function(){var t=localStorage.getItem('maintainx-theme');if(t)document.documentElement.setAttribute('data-theme',t);})();</script>
+</head>
+<body>
+  <div class="app-layout">
+    <aside class="sidebar">
+      <div class="sidebar__header"><a href="{% url 'dashboard' %}" class="logo"><i class="fa-solid fa-wrench"></i> MaintainX</a></div>
+      <nav class="sidebar__nav">
+        <a href="{% url 'dashboard' %}" class="sidebar__link"><i class="fa-solid fa-gauge-high"></i> Dashboard</a>
+        <a href="{% url 'tickets' %}" class="sidebar__link"><i class="fa-solid fa-ticket"></i> Tickets</a>
+        <a href="{% url 'calendar' %}" class="sidebar__link"><i class="fa-solid fa-calendar-days"></i> Calendar</a>
+        <a href="{% url 'equipment_list' %}" class="sidebar__link is-active"><i class="fa-solid fa-cubes"></i> Equipment</a>
+        <a href="{% url 'create_ticket' %}" class="sidebar__link"><i class="fa-solid fa-plus"></i> Create Ticket</a>
+        <a href="{% url 'workers' %}" class="sidebar__link"><i class="fa-solid fa-users"></i> Workers</a>
+        <a href="{% url 'analytics' %}" class="sidebar__link"><i class="fa-solid fa-chart-line"></i> Analytics</a>
+        <a href="{% url 'settings' %}" class="sidebar__link"><i class="fa-solid fa-gear"></i> Settings</a>
+      </nav>
+      <div class="sidebar__footer"><a href="{% url 'logout' %}" class="sidebar__link"><i class="fa-solid fa-right-from-bracket"></i> Log out</a></div>
+    </aside>
+    <div class="sidebar-overlay"></div>
+    <div class="app-main">
+      <header class="topbar">
+        <div class="topbar__left">
+          <button class="btn btn--ghost btn--icon topbar__menu-btn" data-sidebar-toggle aria-label="Open menu"><i class="fa-solid fa-bars"></i></button>
+        </div>
+        <div class="topbar__right">
+          <button class="btn btn--ghost btn--icon theme-toggle" data-theme-toggle aria-label="Toggle theme"><i class="fa-solid fa-moon" data-theme-icon></i></button>
+        </div>
+      </header>
+      <main class="page-content">
+        <div style="margin-bottom:1rem;">
+          <a href="{% url 'equipment_list' %}" class="btn btn--ghost btn--sm"><i class="fa-solid fa-arrow-left"></i> Back to Equipment List</a>
+        </div>
+
+        <header class="page-header" style="align-items:flex-start;flex-wrap:wrap;">
+          <div>
+            <div style="display:flex;align-items:center;gap:0.75rem;">
+              <h1 style="margin:0;">{{ equipment.name }}</h1>
+              {% if equipment.status == 'active' %}
+                <span class="badge badge--resolved">Active</span>
+              {% elif equipment.status == 'maintenance' %}
+                <span class="badge badge--progress">Under Maintenance</span>
+              {% elif equipment.status == 'scrapped' %}
+                <span class="badge badge--urgent">Scrapped</span>
+              {% else %}
+                <span class="badge badge--ghost">{{ equipment.status|title }}</span>
+              {% endif %}
+            </div>
+            <p style="margin-top:0.25rem;color:var(--color-text-secondary);"><i class="fa-solid fa-barcode"></i> Serial Number: <strong>{{ equipment.serial_number }}</strong></p>
+          </div>
+
+          <div style="display:flex;gap:0.75rem;align-items:center;flex-wrap:wrap;">
+            <!-- Smart Maintenance Count Button -->
+            <button type="button" class="btn btn--primary" style="cursor:default;">
+              <i class="fa-solid fa-wrench"></i> Maintenance <span class="badge badge--ghost" style="background:rgba(255,255,255,0.25);color:inherit;margin-left:0.25rem;">{{ total_count }}</span>
+            </button>
+
+            <!-- Open Maintenance Indicator -->
+            <div class="badge badge--open" style="padding:0.6rem 1rem;font-size:0.9rem;display:flex;align-items:center;gap:0.35rem;">
+              <i class="fa-solid fa-folder-open"></i> Open Work Orders: <strong>{{ open_count }}</strong>
+            </div>
+
+            {% if equipment.status != 'scrapped' %}
+              <a href="{% url 'create_ticket' %}?equipment={{ equipment.id }}" class="btn btn--secondary"><i class="fa-solid fa-plus"></i> New Ticket for Equipment</a>
+            {% endif %}
+          </div>
+        </header>
+
+        {% if equipment.status == 'scrapped' %}
+          <div class="toast-notification" style="position:static;animation:none;margin-bottom:1.5rem;background:#ef4444;color:#fff;">
+            <i class="fa-solid fa-triangle-exclamation"></i> <span>This equipment is <strong>Scrapped</strong>. Historical maintenance records remain visible below, but no new maintenance requests can be raised.</span>
+          </div>
+        {% endif %}
+
+        <!-- Equipment Overview Card -->
+        <div class="card" style="margin-bottom:1.5rem;">
+          <div class="card__body" style="display:grid;grid-template-columns:repeat(auto-fit, minmax(200px, 1fr));gap:1rem;">
+            <div>
+              <span style="font-size:0.8rem;color:var(--color-text-secondary);display:block;">Category</span>
+              <strong>{{ equipment.category|default:"N/A" }}</strong>
+            </div>
+            <div>
+              <span style="font-size:0.8rem;color:var(--color-text-secondary);display:block;">Location</span>
+              <strong>{{ equipment.location|default:"N/A" }}</strong>
+            </div>
+            <div>
+              <span style="font-size:0.8rem;color:var(--color-text-secondary);display:block;">Maintenance Team</span>
+              <strong>{{ equipment.maintenance_team.name|default:"Unassigned" }}</strong>
+            </div>
+            <div>
+              <span style="font-size:0.8rem;color:var(--color-text-secondary);display:block;">Default Technician</span>
+              <strong>
+                {% if equipment.default_technician %}
+                  {{ equipment.default_technician.get_full_name|default:equipment.default_technician.username }}
+                {% else %}
+                  Unassigned
+                {% endif %}
+              </strong>
+            </div>
+          </div>
+        </div>
+
+        <!-- Filtered Maintenance Requests Table -->
+        <div class="table-wrap">
+          <table class="data-table">
+            <thead>
+              <tr><th>ID</th><th>Subject</th><th>Type</th><th>Team / Tech</th><th>Priority</th><th>Duration</th><th>Scheduled Date</th><th>Status</th></tr>
+            </thead>
+            <tbody>
+              {% if maintenance_requests %}
+                {% for req in maintenance_requests %}
+                <tr>
+                  <td>TKT-{{ req.id }}</td>
+                  <td>
+                    <strong>{{ req.title }}</strong>
+                    {% if req.is_overdue %}
+                      <span class="badge badge--overdue" style="font-size:0.7rem;margin-left:0.3rem;"><i class="fa-solid fa-triangle-exclamation"></i> Overdue</span>
+                    {% endif %}
+                  </td>
+                  <td><span class="badge badge--ghost">{{ req.get_request_type_display|default:req.request_type|title }}</span></td>
+                  <td>
+                    {% if req.assigned_technician %}
+                      {{ req.assigned_technician.get_full_name|default:req.assigned_technician.username }}
+                    {% elif req.assigned_team %}
+                      {{ req.assigned_team.name }}
+                    {% else %}
+                      Unassigned
+                    {% endif %}
+                  </td>
+                  <td><span class="badge badge--{{ req.priority }}">{{ req.priority|title }}</span></td>
+                  <td>{{ req.duration_display|default:"-" }}</td>
+                  <td>{{ req.scheduled_date|date:"d M Y"|default:"Unscheduled" }}</td>
+                  <td>
+                    {% if req.status == 'pending' or req.status == 'new' %}
+                      <span class="badge badge--open">{{ req.get_status_display|default:"New" }}</span>
+                    {% elif req.status == 'in_progress' %}
+                      <span class="badge badge--progress">In Progress</span>
+                    {% elif req.status == 'completed' or req.status == 'repaired' %}
+                      <span class="badge badge--resolved">{{ req.get_status_display|default:"Repaired" }}</span>
+                    {% elif req.status == 'scrap' %}
+                      <span class="badge badge--urgent">Scrap</span>
+                    {% else %}
+                      <span class="badge badge--urgent">{{ req.status|title }}</span>
+                    {% endif %}
+                  </td>
+                </tr>
+                {% endfor %}
+              {% else %}
+                <tr><td colspan="8" style="text-align:center;padding:2rem;">No maintenance requests have been recorded for this equipment. {% if equipment.status != 'scrapped' %}<a href="{% url 'create_ticket' %}?equipment={{ equipment.id }}">Create one now</a>{% endif %}</td></tr>
+              {% endif %}
+            </tbody>
+          </table>
+        </div>
+      </main>
+    </div>
+  </div>
+  <script src="{% static 'js/main.js' %}"></script>
+</body>
+</html>

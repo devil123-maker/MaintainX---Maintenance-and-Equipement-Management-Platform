@@ -346,3 +346,47 @@ class MaintenanceTests(TestCase):
             content_type='application/json'
         )
         self.assertEqual(response.status_code, 400)
+
+    def test_dynamic_duration_minutes(self):
+        req = MaintenanceRequest.objects.create(
+            title='Laptop quick fix',
+            description='Fixed cable in 10 mins',
+            equipment=self.equipment,
+            requested_by=self.user,
+            duration_value=10,
+            duration_unit='minutes'
+        )
+        self.assertEqual(req.duration_display, '10 mins')
+        self.assertEqual(float(req.duration_hours), 0.17)
+
+    def test_dynamic_duration_hours(self):
+        req = MaintenanceRequest.objects.create(
+            title='Pump inspection',
+            description='Took 2.5 hours',
+            equipment=self.equipment,
+            requested_by=self.user,
+            duration_value=2.5,
+            duration_unit='hours'
+        )
+        self.assertEqual(req.duration_display, '2.5 hrs')
+        self.assertEqual(float(req.duration_hours), 2.5)
+
+    def test_dynamic_duration_days(self):
+        req = MaintenanceRequest.objects.create(
+            title='Overhaul',
+            description='Took 1 day',
+            equipment=self.equipment,
+            requested_by=self.user,
+            duration_value=1,
+            duration_unit='days'
+        )
+        self.assertEqual(req.duration_display, '1 day')
+        self.assertEqual(float(req.duration_hours), 24.0)
+
+    def test_calendar_modal_cancel_button_semantics(self):
+        response = self.client.get(reverse('calendar'))
+        self.assertEqual(response.status_code, 200)
+        self.assertContains(response, 'data-modal-close')
+        self.assertContains(response, 'type="button"')
+        self.assertContains(response, 'onclick="closeModal(this)"')
+

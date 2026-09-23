@@ -106,3 +106,61 @@ class EquipmentTests(TestCase):
         self.assertEqual(response.status_code, 200)
         self.equipment.refresh_from_db()
         self.assertEqual(self.equipment.status, 'scrapped')
+
+    def test_equipment_maintenance_count(self):
+        from maintenance.models import MaintenanceRequest
+        MaintenanceRequest.objects.create(
+            title='Fix generator oil',
+            description='Oil change',
+            equipment=self.equipment,
+            requested_by=self.user,
+            status='pending'
+        )
+        MaintenanceRequest.objects.create(
+            title='Replace filter',
+            description='Filter replacement',
+            equipment=self.equipment,
+            requested_by=self.user,
+            status='repaired'
+        )
+
+        self.assertEqual(self.equipment.maintenance_count, 2)
+        self.assertEqual(self.equipment.open_maintenance_count, 1)
+
+    def test_equipment_maintenance_filtering(self):
+        from maintenance.models import MaintenanceRequest
+        eq2 = Equipment.objects.create(
+            name='Compressor B',
+            serial_number='COMP-5500',
+            status='active',
+            created_by=self.user
+        )
+        req1 = MaintenanceRequest.objects.create(
+            title='Gen repair',
+            description='Repair gen',
+            equipment=self.equipment,
+            requested_by=self.user
+        )
+        req2 = MaintenanceRequest.objects.create(
+            title='Compressor check',
+            description='Check compressor',
+            equipment=eq2,
+            requested_by=self.user
+        )
+
+        response = self.client.get(reverse('equipment_maintenance', kwargs={'pk': self.equipment.pk}), HTTP_ACCEPT='application/json')
+        self.assertEqual(response.status_code, 200)
+        data = response.json()
+        req_ids = [r['id'] for r in data['requests']]
+        self.assertIn(req1.id, req_ids)
+        self.assertNotIn(req2.id, req_ids)
+        self.assertEqual(data['total_requests'], 1)
+
+    def test_equipment_maintenance_html_render(self):
+        response = self.client.get(reverse('equipment_list'), HTTP_ACCEPT='text/html')
+        self.assertEqual(response.status_code, 200)
+        self.assertTemplateUsed(response, 'equipment.html')
+
+        response_maint = self.client.get(reverse('equipment_maintenance', kwargs={'pk': self.equipment.pk}), HTTP_ACCEPT='text/html')
+        self.assertEqual(response_maint.status_code, 200)
+        self.assertTemplateUsed(response_maint, 'equipment_maintenance.html')

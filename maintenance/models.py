@@ -50,6 +50,12 @@ class MaintenanceRequest(models.Model):
         ('preventive', 'Preventive'),
     )
 
+    DURATION_UNIT_CHOICES = (
+        ('minutes', 'Minutes'),
+        ('hours', 'Hours'),
+        ('days', 'Days'),
+    )
+
     title = models.CharField(max_length=200)
     description = models.TextField()
     equipment = models.ForeignKey(
@@ -92,6 +98,17 @@ class MaintenanceRequest(models.Model):
         null=True,
         blank=True
     )
+    duration_value = models.DecimalField(
+        max_digits=7,
+        decimal_places=2,
+        null=True,
+        blank=True
+    )
+    duration_unit = models.CharField(
+        max_length=10,
+        choices=DURATION_UNIT_CHOICES,
+        default='minutes'
+    )
     created_at = models.DateTimeField(auto_now_add=True)
     updated_at = models.DateTimeField(auto_now=True)
 
@@ -100,6 +117,27 @@ class MaintenanceRequest(models.Model):
 
     def __str__(self):
         return f"{self.title} - {self.status}"
+
+    @property
+    def duration_display(self):
+        from decimal import Decimal
+        if self.duration_value is not None:
+            val = self.duration_value
+            formatted_val = f"{val:.2f}".rstrip('0').rstrip('.') if isinstance(val, (float, Decimal)) else str(val)
+            if self.duration_unit == 'minutes':
+                return f"{formatted_val} mins"
+            elif self.duration_unit == 'hours':
+                return f"{formatted_val} hrs"
+            elif self.duration_unit == 'days':
+                return f"{formatted_val} {'day' if val == 1 else 'days'}"
+            return f"{formatted_val} {self.duration_unit}"
+        elif self.duration_hours is not None:
+            val = self.duration_hours
+            if val < 1:
+                return f"{int(round(val * 60))} mins"
+            formatted_val = f"{val:.2f}".rstrip('0').rstrip('.')
+            return f"{formatted_val} hrs"
+        return ""
 
     @property
     def is_overdue(self):
@@ -148,6 +186,20 @@ class MaintenanceRequest(models.Model):
                 terminal_statuses = ['completed', 'repaired', 'scrap', 'cancelled']
                 if orig.status in terminal_statuses:
                     raise ValidationError({'status': f'Cannot transition status from terminal state \'{orig.status}\' to \'{self.status}\'.'})
+
+        # 6. Sync duration_value and duration_unit with duration_hours
+        from decimal import Decimal
+        if self.duration_value is not None:
+            val = float(self.duration_value)
+            if self.duration_unit == 'minutes':
+                self.duration_hours = Decimal(str(round(val / 60.0, 2)))
+            elif self.duration_unit == 'hours':
+                self.duration_hours = Decimal(str(round(val, 2)))
+            elif self.duration_unit == 'days':
+                self.duration_hours = Decimal(str(round(val * 24.0, 2)))
+        elif self.duration_hours is not None and self.duration_value is None:
+            self.duration_value = self.duration_hours
+            self.duration_unit = 'hours'
 
     def save(self, *args, **kwargs):
         self.full_clean()

@@ -117,25 +117,65 @@
     });
   }
 
+  window.closeModal = function (target) {
+    if (!target) {
+      document.querySelectorAll(".modal-overlay.is-open").forEach((m) => m.classList.remove("is-open"));
+      return;
+    }
+    const overlay = typeof target === "string"
+      ? document.getElementById(target)
+      : (target.closest ? target.closest(".modal-overlay") : null);
+    if (overlay) overlay.classList.remove("is-open");
+  };
+
   function initModals() {
-    document.querySelectorAll("[data-modal-open]").forEach((trigger) => {
-      const id = trigger.getAttribute("data-modal-open");
-      const overlay = document.getElementById(id);
-      if (!overlay) return;
+  // Open modal buttons
+  document.querySelectorAll("[data-modal-open]").forEach((trigger) => {
+    const id = trigger.getAttribute("data-modal-open");
+    const overlay = document.getElementById(id);
 
-      trigger.addEventListener("click", () => overlay.classList.add("is-open"));
+    if (!overlay) return;
 
-      overlay.querySelectorAll("[data-modal-close]").forEach((close) => {
-        close.addEventListener("click", () =>
-          overlay.classList.remove("is-open"),
-        );
-      });
-
-      overlay.addEventListener("click", (e) => {
-        if (e.target === overlay) overlay.classList.remove("is-open");
-      });
+    trigger.addEventListener("click", () => {
+      overlay.classList.add("is-open");
     });
-  }
+  });
+
+  // Close modal buttons
+  document.addEventListener("click", (e) => {
+    const closeBtn = e.target.closest("[data-modal-close]");
+
+    if (closeBtn) {
+      e.preventDefault();
+      e.stopPropagation();
+
+      const modal = closeBtn.closest(".modal-overlay");
+
+      if (modal) {
+        modal.classList.remove("is-open");
+      }
+
+      return;
+    }
+
+    // Close when clicking directly on dark overlay
+    if (e.target.classList.contains("modal-overlay")) {
+      e.preventDefault();
+      e.target.classList.remove("is-open");
+    }
+  });
+
+  // Close modal with Escape key
+  document.addEventListener("keydown", (e) => {
+    if (e.key === "Escape") {
+      document
+        .querySelectorAll(".modal-overlay.is-open")
+        .forEach((modal) => {
+          modal.classList.remove("is-open");
+        });
+    }
+  });
+}
 
   function initTicketFilter() {
     const search = document.getElementById("ticket-search");
@@ -635,6 +675,7 @@
           <p style="margin-bottom:0.5rem;"><strong>Equipment:</strong> ${ev.equipment_name} (${ev.equipment_serial})</p>
           <p style="margin-bottom:0.5rem;"><strong>Assigned:</strong> ${ev.technician_name || ev.team_name || "Unassigned"}</p>
           <p style="margin-bottom:0.5rem;"><strong>Scheduled Date:</strong> ${ev.scheduled_date || "N/A"}</p>
+          ${ev.duration_display ? `<p style="margin-bottom:0.5rem;"><strong>Duration:</strong> ${ev.duration_display}</p>` : ""}
           <p style="margin-bottom:0.5rem;"><strong>Description:</strong> ${ev.description || "N/A"}</p>
         `;
       }
@@ -664,7 +705,8 @@
               priority: data.priority,
               request_type: "preventive",
               scheduled_date: data.scheduled_date,
-              duration_hours: data.duration_hours || null,
+              duration_value: data.duration_value || null,
+              duration_unit: data.duration_unit || "minutes",
               assigned_team: data.assigned_team || null,
               assigned_technician: data.assigned_technician || null
             })

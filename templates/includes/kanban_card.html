@@ -31,6 +31,12 @@
         <span>Scheduled: {{ req.scheduled_date|date:"d M Y" }}</span>
       </div>
     {% endif %}
+    {% if req.duration_display %}
+      <div class="kanban-card__meta-item">
+        <i class="fa-regular fa-clock"></i>
+        <span>Duration: {{ req.duration_display }}</span>
+      </div>
+    {% endif %}
     {% if req.is_overdue %}
       <div class="kanban-card__meta-item" style="margin-top:0.25rem;">
         <span class="badge badge--overdue"><i class="fa-solid fa-triangle-exclamation"></i> Overdue</span>

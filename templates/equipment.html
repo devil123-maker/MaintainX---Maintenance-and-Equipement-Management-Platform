@@ -1,0 +1,134 @@
+{% load static %}
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Equipment Inventory — MaintainX</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&family=Poppins:wght@600;700&display=swap" rel="stylesheet">
+  <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.5.1/css/all.min.css">
+  <link rel="stylesheet" href="{% static 'css/variables.css' %}">
+  <link rel="stylesheet" href="{% static 'css/base.css' %}">
+  <link rel="stylesheet" href="{% static 'css/components.css' %}">
+  <link rel="stylesheet" href="{% static 'css/layout.css' %}">
+  <script>(function(){var t=localStorage.getItem('maintainx-theme');if(t)document.documentElement.setAttribute('data-theme',t);})();</script>
+</head>
+<body>
+  <div class="app-layout">
+    <aside class="sidebar">
+      <div class="sidebar__header"><a href="{% url 'dashboard' %}" class="logo"><i class="fa-solid fa-wrench"></i> MaintainX</a></div>
+      <nav class="sidebar__nav">
+        <a href="{% url 'dashboard' %}" class="sidebar__link"><i class="fa-solid fa-gauge-high"></i> Dashboard</a>
+        <a href="{% url 'tickets' %}" class="sidebar__link"><i class="fa-solid fa-ticket"></i> Tickets</a>
+        <a href="{% url 'calendar' %}" class="sidebar__link"><i class="fa-solid fa-calendar-days"></i> Calendar</a>
+        <a href="{% url 'equipment_list' %}" class="sidebar__link is-active"><i class="fa-solid fa-cubes"></i> Equipment</a>
+        <a href="{% url 'create_ticket' %}" class="sidebar__link"><i class="fa-solid fa-plus"></i> Create Ticket</a>
+        <a href="{% url 'workers' %}" class="sidebar__link"><i class="fa-solid fa-users"></i> Workers</a>
+        <a href="{% url 'analytics' %}" class="sidebar__link"><i class="fa-solid fa-chart-line"></i> Analytics</a>
+        <a href="{% url 'settings' %}" class="sidebar__link"><i class="fa-solid fa-gear"></i> Settings</a>
+      </nav>
+      <div class="sidebar__footer"><a href="{% url 'logout' %}" class="sidebar__link"><i class="fa-solid fa-right-from-bracket"></i> Log out</a></div>
+    </aside>
+    <div class="sidebar-overlay"></div>
+    <div class="app-main">
+      <header class="topbar">
+        <div class="topbar__left">
+          <button class="btn btn--ghost btn--icon topbar__menu-btn" data-sidebar-toggle aria-label="Open menu"><i class="fa-solid fa-bars"></i></button>
+        </div>
+        <div class="topbar__right">
+          <button class="btn btn--ghost btn--icon theme-toggle" data-theme-toggle aria-label="Toggle theme"><i class="fa-solid fa-moon" data-theme-icon></i></button>
+        </div>
+      </header>
+      <main class="page-content">
+        <header class="page-header">
+          <div>
+            <h1>Equipment Inventory</h1>
+            <p>Manage physical assets, view maintenance history, and open work orders</p>
+          </div>
+        </header>
+
+        <div class="filter-bar">
+          <div class="search-input-wrap">
+            <i class="fa-solid fa-magnifying-glass"></i>
+            <input type="search" id="equipment-search" class="form-input" placeholder="Search equipment by name, serial, category...">
+          </div>
+          <select id="equipment-status-filter" class="form-select" onchange="location.href='?status=' + this.value;">
+            <option value="all" {% if current_status == 'all' %}selected{% endif %}>All Statuses</option>
+            <option value="active" {% if current_status == 'active' %}selected{% endif %}>Active</option>
+            <option value="maintenance" {% if current_status == 'maintenance' %}selected{% endif %}>Under Maintenance</option>
+            <option value="inactive" {% if current_status == 'inactive' %}selected{% endif %}>Inactive</option>
+            <option value="scrapped" {% if current_status == 'scrapped' %}selected{% endif %}>Scrapped</option>
+          </select>
+        </div>
+
+        <div style="display:grid;grid-template-columns:repeat(auto-fill, minmax(320px, 1fr));gap:1.25rem;" id="equipment-grid">
+          {% if equipments %}
+            {% for eq in equipments %}
+              <div class="card" data-equipment-card style="display:flex;flex-direction:column;justify-content:space-between;">
+                <div class="card__body">
+                  <div style="display:flex;align-items:flex-start;justify-content:space-between;gap:0.5rem;margin-bottom:0.75rem;">
+                    <div>
+                      <h3 style="margin:0;font-size:1.1rem;font-weight:700;color:var(--color-text);">{{ eq.name }}</h3>
+                      <span style="font-size:0.8rem;color:var(--color-text-secondary);"><i class="fa-solid fa-barcode"></i> {{ eq.serial_number }}</span>
+                    </div>
+                    {% if eq.status == 'active' %}
+                      <span class="badge badge--resolved">Active</span>
+                    {% elif eq.status == 'maintenance' %}
+                      <span class="badge badge--progress">Under Maintenance</span>
+                    {% elif eq.status == 'scrapped' %}
+                      <span class="badge badge--urgent">Scrapped</span>
+                    {% else %}
+                      <span class="badge badge--ghost">{{ eq.status|title }}</span>
+                    {% endif %}
+                  </div>
+
+                  <div style="font-size:0.875rem;color:var(--color-text-secondary);display:flex;flex-direction:column;gap:0.35rem;margin-bottom:1rem;">
+                    {% if eq.category %}
+                      <div><i class="fa-solid fa-tag" style="width:18px;"></i> <strong>Category:</strong> {{ eq.category }}</div>
+                    {% endif %}
+                    {% if eq.location %}
+                      <div><i class="fa-solid fa-location-dot" style="width:18px;"></i> <strong>Location:</strong> {{ eq.location }}</div>
+                    {% endif %}
+                    {% if eq.maintenance_team %}
+                      <div><i class="fa-solid fa-users-gear" style="width:18px;"></i> <strong>Team:</strong> {{ eq.maintenance_team.name }}</div>
+                    {% endif %}
+                    {% if eq.default_technician %}
+                      <div><i class="fa-solid fa-user-gear" style="width:18px;"></i> <strong>Tech:</strong> {{ eq.default_technician.get_full_name|default:eq.default_technician.username }}</div>
+                    {% endif %}
+                  </div>
+                </div>
+
+                <div class="card__footer" style="display:flex;align-items:center;justify-content:space-between;gap:0.5rem;padding:0.875rem 1.25rem;background:var(--color-bg-subtle, rgba(0,0,0,0.02));border-top:1px solid var(--color-border);">
+                  <div style="display:flex;gap:0.5rem;align-items:center;">
+                    <!-- Maintenance Smart Button -->
+                    <a href="{% url 'equipment_maintenance' eq.id %}" class="btn btn--primary btn--sm" style="display:inline-flex;align-items:center;gap:0.35rem;">
+                      <i class="fa-solid fa-wrench"></i> Maintenance <span class="badge badge--ghost" style="background:rgba(255,255,255,0.25);color:inherit;padding:1px 6px;border-radius:10px;">{{ eq.maintenance_count }}</span>
+                    </a>
+                  </div>
+                  <div>
+                    <!-- Open Maintenance Indicator -->
+                    {% if eq.open_maintenance_count > 0 %}
+                      <span class="badge badge--open" title="Active open maintenance requests" style="font-size:0.75rem;">
+                        <i class="fa-solid fa-folder-open"></i> Open: {{ eq.open_maintenance_count }}
+                      </span>
+                    {% else %}
+                      <span class="badge badge--ghost" style="font-size:0.75rem;">No Open Requests</span>
+                    {% endif %}
+                  </div>
+                </div>
+              </div>
+            {% endfor %}
+          {% else %}
+            <div class="card" style="grid-column:1/-1;text-align:center;padding:2rem;">
+              <p>No equipment found matching criteria.</p>
+            </div>
+          {% endif %}
+        </div>
+      </main>
+    </div>
+  </div>
+  <script src="{% static 'js/main.js' %}"></script>
+</body>
+</html>
