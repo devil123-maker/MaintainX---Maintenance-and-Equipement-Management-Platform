@@ -1,0 +1,318 @@
+{% load static %}
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>TKT-{{ maintenance_request.id }} — {{ maintenance_request.title }} — GearGuard</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&family=Poppins:wght@600;700&display=swap" rel="stylesheet">
+  <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.5.1/css/all.min.css">
+  <link rel="stylesheet" href="{% static 'css/variables.css' %}">
+  <link rel="stylesheet" href="{% static 'css/base.css' %}">
+  <link rel="stylesheet" href="{% static 'css/components.css' %}">
+  <link rel="stylesheet" href="{% static 'css/layout.css' %}">
+  <script>(function(){var t=localStorage.getItem('maintainx-theme');if(t)document.documentElement.setAttribute('data-theme',t);})();</script>
+</head>
+<body>
+  <div class="app-layout" data-ticket-detail-view>
+    <aside class="sidebar">
+      <div class="sidebar__header"><a href="{% url 'dashboard' %}" class="logo"><i class="fa-solid fa-shield-halved"></i> GearGuard</a></div>
+      <nav class="sidebar__nav">
+        <a href="{% url 'dashboard' %}" class="sidebar__link"><i class="fa-solid fa-gauge-high"></i> Dashboard</a>
+        <a href="{% url 'tickets' %}" class="sidebar__link is-active"><i class="fa-solid fa-ticket"></i> Tickets</a>
+        {% if user.is_technician_user %}
+          <a href="{% url 'tickets' %}?tab=available" class="sidebar__link"><i class="fa-solid fa-inbox"></i> Available Requests</a>
+          <a href="{% url 'tickets' %}?tab=active" class="sidebar__link"><i class="fa-solid fa-list-check"></i> My Active Requests</a>
+        {% endif %}
+        <a href="{% url 'calendar' %}" class="sidebar__link"><i class="fa-solid fa-calendar-days"></i> Calendar</a>
+        <a href="{% url 'equipment_list' %}" class="sidebar__link"><i class="fa-solid fa-cubes"></i> Equipment</a>
+        {% if not user.is_technician_user %}
+          <a href="{% url 'create_ticket' %}" class="sidebar__link"><i class="fa-solid fa-plus"></i> Create Ticket</a>
+        {% endif %}
+        <a href="{% url 'workers' %}" class="sidebar__link"><i class="fa-solid fa-users"></i> Workers</a>
+        <a href="{% url 'analytics' %}" class="sidebar__link"><i class="fa-solid fa-chart-line"></i> Analytics</a>
+        <a href="{% url 'settings' %}" class="sidebar__link"><i class="fa-solid fa-gear"></i> Settings</a>
+      </nav>
+      <div class="sidebar__footer"><a href="{% url 'logout' %}" class="sidebar__link"><i class="fa-solid fa-right-from-bracket"></i> Log out</a></div>
+    </aside>
+    <div class="sidebar-overlay"></div>
+    <div class="app-main">
+      <header class="topbar">
+        <div class="topbar__left">
+          <button class="btn btn--ghost btn--icon topbar__menu-btn" data-sidebar-toggle aria-label="Open menu"><i class="fa-solid fa-bars"></i></button>
+        </div>
+        <div class="topbar__right">
+          <button class="btn btn--ghost btn--icon theme-toggle" data-theme-toggle aria-label="Toggle theme"><i class="fa-solid fa-moon" data-theme-icon></i></button>
+        </div>
+      </header>
+      <main class="page-content">
+        <div style="margin-bottom:1rem;">
+          <a href="{% url 'tickets' %}" class="btn btn--ghost btn--sm"><i class="fa-solid fa-arrow-left"></i> Back to Tickets</a>
+        </div>
+
+        {% if messages %}
+          <div style="margin-bottom:1rem;">
+            {% for message in messages %}
+              <div class="toast-notification" style="position:static;animation:none;margin-bottom:0.5rem;background:{% if message.tags == 'error' %}#ef4444{% else %}#10b981{% endif %};color:#fff;">
+                <i class="fa-solid fa-circle-info"></i> <span>{{ message }}</span>
+              </div>
+            {% endfor %}
+          </div>
+        {% endif %}
+
+        <header class="page-header" style="align-items:flex-start;flex-wrap:wrap;">
+          <div>
+            <div style="display:flex;align-items:center;gap:0.75rem;flex-wrap:wrap;">
+              <span class="badge badge--ghost" style="font-size:0.85rem;font-weight:700;">TKT-{{ maintenance_request.id }}</span>
+              <h1 style="margin:0;font-size:1.75rem;">{{ maintenance_request.title }}</h1>
+              {% if maintenance_request.status == 'pending' or maintenance_request.status == 'new' %}
+                <span class="badge badge--open">New</span>
+              {% elif maintenance_request.status == 'in_progress' %}
+                <span class="badge badge--progress">In Progress</span>
+              {% elif maintenance_request.status == 'repaired' or maintenance_request.status == 'completed' %}
+                <span class="badge badge--resolved">Repaired</span>
+              {% elif maintenance_request.status == 'scrap' %}
+                <span class="badge badge--urgent">Scrap</span>
+              {% else %}
+                <span class="badge badge--ghost">{{ maintenance_request.status|title }}</span>
+              {% endif %}
+              <span class="badge badge--{{ maintenance_request.priority }}">{{ maintenance_request.priority|title }}</span>
+              <span class="badge badge--ghost">{{ maintenance_request.get_request_type_display|default:maintenance_request.request_type|title }}</span>
+              {% if maintenance_request.is_overdue %}
+                <span class="badge badge--overdue"><i class="fa-solid fa-triangle-exclamation"></i> Overdue</span>
+              {% endif %}
+            </div>
+            <p style="margin-top:0.35rem;color:var(--color-text-secondary);">
+              Created on {{ maintenance_request.created_at|date:"d M Y, H:i" }} by <strong>{{ maintenance_request.requested_by.get_full_name|default:maintenance_request.requested_by.username }}</strong>
+            </p>
+          </div>
+
+          <div style="display:flex;gap:0.5rem;align-items:center;">
+            {% if user_can_join %}
+              <button type="button" class="btn btn--primary" data-join-request-btn data-ticket-id="{{ maintenance_request.id }}">
+                <i class="fa-solid fa-hand-holding-hand"></i> Join Request
+              </button>
+            {% endif %}
+          </div>
+        </header>
+
+        {% csrf_token %}
+
+        <div style="display:grid;grid-template-columns:2fr 1fr;gap:1.5rem;align-items:start;">
+          <!-- Left Column: Details, Work Info, Completion Form -->
+          <div style="display:flex;flex-direction:column;gap:1.5rem;">
+            <!-- Description Card -->
+            <div class="card">
+              <div class="card__header">
+                <h3 class="card__title"><i class="fa-solid fa-align-left" style="color:var(--color-primary);"></i> Issue Description</h3>
+              </div>
+              <div class="card__body">
+                <p style="white-space:pre-wrap;line-height:1.6;color:var(--color-text);">{{ maintenance_request.description }}</p>
+              </div>
+            </div>
+
+            <!-- Technician Work & Completion Section -->
+            {% if maintenance_request.status == 'in_progress' and user_can_repair %}
+              <div class="card" style="border:2px solid var(--color-primary-light, rgba(59, 130, 246, 0.3));">
+                <div class="card__header" style="background:var(--color-surface);">
+                  <h3 class="card__title"><i class="fa-solid fa-screwdriver-wrench" style="color:var(--color-primary);"></i> Technician Work Information & Completion</h3>
+                </div>
+                <div class="card__body">
+                  <p style="margin-bottom:1rem;color:var(--color-text-secondary);font-size:0.9rem;">
+                    You are assigned to this ticket. Enter your work details and hours spent, then mark as repaired when finished.
+                  </p>
+                  <form method="post" action="{% url 'request_complete' maintenance_request.id %}" id="complete-ticket-form">
+                    {% csrf_token %}
+                    <input type="hidden" name="status" value="repaired">
+                    
+                    <div class="form-row">
+                      <div class="form-group">
+                        <label class="form-label" for="duration_value">Duration / Hours Spent</label>
+                        <div style="display:flex;gap:0.5rem;">
+                          <input type="number" name="duration_value" id="duration_value" class="form-input" placeholder="e.g. 1.5 or 30" step="any" min="0" value="{{ maintenance_request.duration_value|default:'' }}" style="flex:1;">
+                          <select name="duration_unit" id="duration_unit" class="form-select" style="width:130px;">
+                            <option value="minutes" {% if maintenance_request.duration_unit == 'minutes' %}selected{% endif %}>Minutes</option>
+                            <option value="hours" {% if not maintenance_request.duration_unit or maintenance_request.duration_unit == 'hours' %}selected{% endif %}>Hours</option>
+                            <option value="days" {% if maintenance_request.duration_unit == 'days' %}selected{% endif %}>Days</option>
+                          </select>
+                        </div>
+                      </div>
+                      <div class="form-group">
+                        <label class="form-label" for="parts_used">Parts Used (Optional)</label>
+                        <input type="text" name="parts_used" id="parts_used" class="form-input" placeholder="e.g. O-Ring 24mm, hydraulic seal">
+                      </div>
+                    </div>
+
+                    <div class="form-row">
+                      <div class="form-group">
+                        <label class="form-label" for="cost">Material / Repair Cost ($)</label>
+                        <input type="number" name="cost" id="cost" class="form-input" placeholder="e.g. 125.00" step="0.01" min="0">
+                      </div>
+                    </div>
+
+                    <div class="form-group">
+                      <label class="form-label" for="notes">Resolution Notes / Work Summary <span style="color:var(--color-danger);">*</span></label>
+                      <textarea name="notes" id="notes" class="form-textarea" rows="3" placeholder="Describe the repair actions performed, root cause, and verification steps..." required></textarea>
+                    </div>
+
+                    <div style="display:flex;gap:0.75rem;justify-content:flex-end;margin-top:1rem;">
+                      <button type="submit" class="btn btn--success" id="btn-submit-repair">
+                        <i class="fa-solid fa-check"></i> Mark as Repaired
+                      </button>
+                    </div>
+                  </form>
+                </div>
+              </div>
+            {% elif maintenance_request.status == 'repaired' or maintenance_request.status == 'completed' %}
+              <div class="card" style="border:1px solid #10b981;background:rgba(16, 185, 129, 0.05);">
+                <div class="card__body" style="display:flex;align-items:center;gap:1rem;">
+                  <i class="fa-solid fa-circle-check" style="color:#10b981;font-size:2rem;"></i>
+                  <div>
+                    <h3 style="margin:0;color:#10b981;">Maintenance Completed</h3>
+                    <p style="margin:0.25rem 0 0;color:var(--color-text-secondary);font-size:0.9rem;">
+                      This ticket was marked as repaired on <strong>{{ maintenance_request.completed_date|date:"d M Y" }}</strong>.
+                    </p>
+                  </div>
+                </div>
+              </div>
+            {% endif %}
+
+            <!-- Maintenance History & Work Logs -->
+            <div class="card">
+              <div class="card__header">
+                <h3 class="card__title"><i class="fa-solid fa-clock-rotate-left" style="color:var(--color-primary);"></i> Existing Work Information & History</h3>
+              </div>
+              <div class="card__body">
+                {% if history %}
+                  <div style="display:flex;flex-direction:column;gap:1rem;">
+                    {% for item in history %}
+                      <div style="padding:0.85rem;background:var(--color-surface);border:1px solid var(--color-border);border-radius:var(--radius-md);">
+                        <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:0.4rem;">
+                          <span style="font-weight:600;font-size:0.9rem;">
+                            <i class="fa-solid fa-user-gear"></i> {{ item.performed_by.get_full_name|default:item.performed_by.username|default:"System" }}
+                          </span>
+                          <span style="font-size:0.8rem;color:var(--color-text-secondary);">{{ item.created_at|date:"d M Y, H:i" }}</span>
+                        </div>
+                        <p style="margin:0;font-size:0.9rem;color:var(--color-text);line-height:1.5;">{{ item.notes }}</p>
+                        {% if item.parts_used or item.cost %}
+                          <div style="display:flex;gap:1rem;margin-top:0.4rem;font-size:0.8rem;color:var(--color-text-secondary);">
+                            {% if item.parts_used %}<span><strong>Parts:</strong> {{ item.parts_used }}</span>{% endif %}
+                            {% if item.cost %}<span><strong>Cost:</strong> ${{ item.cost }}</span>{% endif %}
+                          </div>
+                        {% endif %}
+                      </div>
+                    {% endfor %}
+                  </div>
+                {% else %}
+                  <p style="color:var(--color-text-secondary);margin:0;">No work history recorded yet.</p>
+                {% endif %}
+              </div>
+            </div>
+          </div>
+
+          <!-- Right Column: Meta Info Card -->
+          <div style="display:flex;flex-direction:column;gap:1.5rem;">
+            <!-- Metadata Card -->
+            <div class="card">
+              <div class="card__header">
+                <h3 class="card__title"><i class="fa-solid fa-circle-info" style="color:var(--color-primary);"></i> Ticket Overview</h3>
+              </div>
+              <div class="card__body" style="display:flex;flex-direction:column;gap:1rem;">
+                <div>
+                  <span style="font-size:0.8rem;color:var(--color-text-secondary);display:block;">Assigned Technician</span>
+                  <strong data-card-tech-label style="font-size:1rem;">
+                    {% if maintenance_request.assigned_technician %}
+                      <i class="fa-solid fa-user-check" style="color:#10b981;"></i> {{ maintenance_request.assigned_technician.get_full_name|default:maintenance_request.assigned_technician.username }}
+                    {% else %}
+                      <span class="badge badge--ghost">Unassigned</span>
+                    {% endif %}
+                  </strong>
+                </div>
+
+                <div>
+                  <span style="font-size:0.8rem;color:var(--color-text-secondary);display:block;">Responsible Team</span>
+                  <strong>
+                    {% if maintenance_request.assigned_team %}
+                      <i class="fa-solid fa-users-gear"></i> {{ maintenance_request.assigned_team.name }}
+                    {% else %}
+                      <span style="color:var(--color-text-muted);">None</span>
+                    {% endif %}
+                  </strong>
+                </div>
+
+                <div>
+                  <span style="font-size:0.8rem;color:var(--color-text-secondary);display:block;">Equipment</span>
+                  <strong>
+                    <a href="{% url 'equipment_maintenance' maintenance_request.equipment.id %}" style="color:var(--color-primary);text-decoration:none;">
+                      <i class="fa-solid fa-cubes"></i> {{ maintenance_request.equipment.name }}
+                    </a>
+                  </strong>
+                  <div style="font-size:0.8rem;color:var(--color-text-secondary);margin-top:0.2rem;">
+                    Serial: <strong>{{ maintenance_request.equipment.serial_number }}</strong>
+                  </div>
+                  {% if maintenance_request.equipment.category %}
+                    <div style="font-size:0.8rem;color:var(--color-text-secondary);">
+                      Category: {{ maintenance_request.equipment.category }}
+                    </div>
+                  {% endif %}
+                </div>
+
+                <div>
+                  <span style="font-size:0.8rem;color:var(--color-text-secondary);display:block;">Scheduled Date</span>
+                  <strong>
+                    {% if maintenance_request.scheduled_date %}
+                      <i class="fa-regular fa-calendar"></i> {{ maintenance_request.scheduled_date|date:"d M Y" }}
+                    {% else %}
+                      <span style="color:var(--color-text-muted);font-weight:normal;">Not scheduled</span>
+                    {% endif %}
+                  </strong>
+                </div>
+
+                <div>
+                  <span style="font-size:0.8rem;color:var(--color-text-secondary);display:block;">Duration / Hours Spent</span>
+                  <strong>
+                    {% if maintenance_request.duration_display %}
+                      <i class="fa-regular fa-clock"></i> {{ maintenance_request.duration_display }}
+                    {% else %}
+                      <span style="color:var(--color-text-muted);font-weight:normal;">Not recorded</span>
+                    {% endif %}
+                  </strong>
+                </div>
+
+                <div>
+                  <span style="font-size:0.8rem;color:var(--color-text-secondary);display:block;">Requester</span>
+                  <strong>{{ maintenance_request.requested_by.get_full_name|default:maintenance_request.requested_by.username }}</strong>
+                </div>
+              </div>
+            </div>
+
+            <!-- Quick Actions Card -->
+            <div class="card">
+              <div class="card__header">
+                <h3 class="card__title"><i class="fa-solid fa-bolt" style="color:var(--color-primary);"></i> Quick Actions</h3>
+              </div>
+              <div class="card__body" style="display:flex;flex-direction:column;gap:0.75rem;" data-card-actions>
+                {% if user_can_join %}
+                  <button type="button" class="btn btn--primary" data-join-request-btn data-ticket-id="{{ maintenance_request.id }}" style="width:100%;">
+                    <i class="fa-solid fa-hand-holding-hand"></i> Join Request
+                  </button>
+                {% elif maintenance_request.status == 'in_progress' and user_can_repair %}
+                  <button type="button" class="btn btn--success" data-complete-request-btn data-ticket-id="{{ maintenance_request.id }}" style="width:100%;">
+                    <i class="fa-solid fa-check"></i> Mark as Repaired
+                  </button>
+                {% endif %}
+                <a href="{% url 'tickets' %}" class="btn btn--secondary" style="width:100%;text-align:center;">
+                  <i class="fa-solid fa-arrow-left"></i> Back to Tickets
+                </a>
+              </div>
+            </div>
+          </div>
+        </div>
+      </main>
+    </div>
+  </div>
+  <script src="{% static 'js/main.js' %}"></script>
+</body>
+</html>

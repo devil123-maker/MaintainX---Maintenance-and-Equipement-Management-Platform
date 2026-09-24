@@ -314,9 +314,19 @@
 
   function getCsrfToken() {
     const input = document.querySelector("[name=csrfmiddlewaretoken]");
-    if (input) return input.value;
-    const cookie = document.cookie.split("; ").find((row) => row.startsWith("csrftoken="));
-    return cookie ? cookie.split("=")[1] : "";
+    if (input && input.value) return input.value;
+    let cookieValue = "";
+    if (document.cookie && document.cookie !== "") {
+      const cookies = document.cookie.split(";");
+      for (let i = 0; i < cookies.length; i++) {
+        const cookie = cookies[i].trim();
+        if (cookie.startsWith("csrftoken=")) {
+          cookieValue = decodeURIComponent(cookie.substring(10));
+          break;
+        }
+      }
+    }
+    return cookieValue;
   }
 
   function updateColumnCounts() {
@@ -768,6 +778,206 @@
     loadCalendarEvents();
   }
 
+  function initJoinRequestActions() {
+    document.addEventListener("click", async (e) => {
+      const btn = e.target.closest("[data-join-request-btn]");
+      if (!btn) return;
+
+      e.preventDefault();
+      const ticketId = btn.getAttribute("data-ticket-id");
+      if (!ticketId) return;
+
+      const originalHtml = btn.innerHTML;
+      btn.disabled = true;
+      btn.innerHTML = `<i class="fa-solid fa-spinner fa-spin"></i> Joining...`;
+
+      try {
+        const response = await fetch(`/requests/${ticketId}/join/`, {
+          method: "POST",
+          headers: {
+            "Content-Type": "application/json",
+            "X-CSRFToken": getCsrfToken(),
+          },
+          credentials: "same-origin"
+        });
+
+        const data = await response.json();
+        if (!response.ok || data.success === false) {
+          let msg = "Failed to join request.";
+          if (typeof data.error === "string") msg = data.error;
+          else if (typeof data.error === "object") msg = Object.values(data.error).flat().join(" ");
+          throw new Error(msg);
+        }
+
+        showToast(data.message || "Request accepted. You are now assigned to this maintenance request.");
+
+        const techName = data.assigned_technician_name || (data.request && data.request.assigned_technician_name) || "Assigned Technician";
+
+        // Check if currently on ticket detail page
+        if (document.querySelector("[data-ticket-detail-view]")) {
+          window.location.reload();
+          return;
+        }
+
+        // 1. Update Kanban card if present
+        const card = document.querySelector(`.kanban-card[data-ticket-id="${ticketId}"]`);
+        if (card) {
+          card.setAttribute("data-status", "in_progress");
+          const techLabel = card.querySelector("[data-card-tech-label]");
+          if (techLabel) {
+            techLabel.textContent = techName;
+          }
+
+          const actionsContainer = card.querySelector("[data-card-actions]");
+          if (actionsContainer) {
+            actionsContainer.innerHTML = `
+              <div style="display:flex;gap:0.4rem;flex-direction:column;width:100%;">
+                <a href="/requests/${ticketId}/" class="btn btn--sm btn--secondary" data-open-ticket-btn style="width:100%;text-align:center;">
+                  <i class="fa-solid fa-arrow-up-right-from-square"></i> Open / Continue Work
+                </a>
+                <button type="button" class="btn btn--sm btn--success" data-complete-request-btn data-ticket-id="${ticketId}" style="width:100%;">
+                  <i class="fa-solid fa-check"></i> Mark as Repaired
+                </button>
+              </div>
+            `;
+          }
+
+          const select = card.querySelector("[data-card-status-select]");
+          if (select) select.value = "in_progress";
+
+          const targetZone = document.querySelector(`[data-status-drop="in_progress"]`);
+          if (targetZone) {
+            targetZone.appendChild(card);
+            updateColumnCounts();
+          }
+        }
+
+        // 2. Update table row if present
+        const row = document.querySelector(`tr[data-ticket-id="${ticketId}"]`);
+        if (row) {
+          row.setAttribute("data-status", "in_progress");
+          const rowTech = row.querySelector("[data-row-tech]");
+          if (rowTech) {
+            rowTech.textContent = techName;
+          }
+          const rowStatus = row.querySelector("[data-row-status]");
+          if (rowStatus) {
+            rowStatus.innerHTML = `<span class="badge badge--progress">In Progress</span>`;
+          }
+          const rowJoinBtn = row.querySelector("[data-join-request-btn]");
+          if (rowJoinBtn) {
+            rowJoinBtn.outerHTML = `
+              <a href="/requests/${ticketId}/" class="btn btn--sm btn--secondary" data-open-ticket-btn style="margin-left:0.5rem;padding:0.2rem 0.5rem;font-size:0.75rem;">
+                <i class="fa-solid fa-arrow-up-right-from-square"></i> Open
+              </a>
+              <button type="button" class="btn btn--sm btn--success" data-complete-request-btn data-ticket-id="${ticketId}" style="margin-left:0.3rem;padding:0.2rem 0.5rem;font-size:0.75rem;">
+                <i class="fa-solid fa-check"></i> Repaired
+              </button>
+            `;
+          }
+        }
+
+        // 3. Fallback if button still in DOM and not yet replaced
+        if (document.body.contains(btn) && btn.hasAttribute("data-join-request-btn")) {
+          btn.outerHTML = `
+            <a href="/requests/${ticketId}/" class="btn btn--sm btn--secondary" data-open-ticket-btn style="margin-left:0.5rem;padding:0.2rem 0.5rem;font-size:0.75rem;">
+              <i class="fa-solid fa-arrow-up-right-from-square"></i> Open / Continue Work
+            </a>
+            <button type="button" class="btn btn--sm btn--success" data-complete-request-btn data-ticket-id="${ticketId}" style="margin-left:0.5rem;padding:0.2rem 0.5rem;font-size:0.75rem;">
+              <i class="fa-solid fa-check"></i> Mark as Repaired
+            </button>
+          `;
+        }
+      } catch (err) {
+        btn.disabled = false;
+        btn.innerHTML = originalHtml;
+        showToast(err.message || "Failed to join request");
+        if (err.message && err.message.toLowerCase().includes("already been assigned")) {
+          btn.remove();
+        }
+      }
+    });
+  }
+
+  function initCompleteRequestActions() {
+    document.addEventListener("click", async (e) => {
+      const btn = e.target.closest("[data-complete-request-btn]");
+      if (!btn) return;
+
+      e.preventDefault();
+      const ticketId = btn.getAttribute("data-ticket-id");
+      if (!ticketId) return;
+
+      const originalHtml = btn.innerHTML;
+      btn.disabled = true;
+      btn.innerHTML = `<i class="fa-solid fa-spinner fa-spin"></i> Completing...`;
+
+      try {
+        const response = await fetch(`/requests/${ticketId}/complete/`, {
+          method: "POST",
+          headers: {
+            "Content-Type": "application/json",
+            "X-CSRFToken": getCsrfToken(),
+          },
+          credentials: "same-origin",
+          body: JSON.stringify({ status: "repaired", notes: "Marked as repaired by technician" }),
+        });
+
+        const data = await response.json();
+        if (!response.ok || data.success === false) {
+          let msg = "Failed to mark as repaired.";
+          if (typeof data.error === "string") msg = data.error;
+          else if (typeof data.error === "object") msg = Object.values(data.error).flat().join(" ");
+          throw new Error(msg);
+        }
+
+        showToast(data.message || "Ticket marked as repaired.");
+
+        if (document.querySelector("[data-ticket-detail-view]")) {
+          window.location.reload();
+          return;
+        }
+
+        // 1. Update Kanban card
+        const card = document.querySelector(`.kanban-card[data-ticket-id="${ticketId}"]`);
+        if (card) {
+          card.setAttribute("data-status", "repaired");
+          const actionsContainer = card.querySelector("[data-card-actions]");
+          if (actionsContainer) actionsContainer.innerHTML = "";
+
+          const select = card.querySelector("[data-card-status-select]");
+          if (select) select.value = "repaired";
+
+          const targetZone = document.querySelector(`[data-status-drop="repaired"]`);
+          if (targetZone) {
+            targetZone.appendChild(card);
+            updateColumnCounts();
+          }
+        }
+
+        // 2. Update table row
+        const row = document.querySelector(`tr[data-ticket-id="${ticketId}"]`);
+        if (row) {
+          row.setAttribute("data-status", "repaired");
+          const rowStatus = row.querySelector("[data-row-status]");
+          if (rowStatus) {
+            rowStatus.innerHTML = `<span class="badge badge--resolved">Repaired</span>`;
+          }
+          const rowCompleteBtn = row.querySelector("[data-complete-request-btn]");
+          if (rowCompleteBtn) rowCompleteBtn.remove();
+        }
+
+        if (document.body.contains(btn)) {
+          btn.remove();
+        }
+      } catch (err) {
+        btn.disabled = false;
+        btn.innerHTML = originalHtml;
+        showToast(err.message || "Failed to complete request");
+      }
+    });
+  }
+
   document.addEventListener("DOMContentLoaded", () => {
     initTheme();
     initThemeToggles();
@@ -784,5 +994,7 @@
     initKanbanDragAndDrop();
     initQuickStatusSelect();
     initCalendar();
+    initJoinRequestActions();
+    initCompleteRequestActions();
   });
 })();

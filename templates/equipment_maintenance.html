@@ -22,9 +22,15 @@
       <nav class="sidebar__nav">
         <a href="{% url 'dashboard' %}" class="sidebar__link"><i class="fa-solid fa-gauge-high"></i> Dashboard</a>
         <a href="{% url 'tickets' %}" class="sidebar__link"><i class="fa-solid fa-ticket"></i> Tickets</a>
+        {% if user.is_technician_user %}
+          <a href="{% url 'tickets' %}?tab=available" class="sidebar__link"><i class="fa-solid fa-inbox"></i> Available Requests</a>
+          <a href="{% url 'tickets' %}?tab=active" class="sidebar__link"><i class="fa-solid fa-list-check"></i> My Active Requests</a>
+        {% endif %}
         <a href="{% url 'calendar' %}" class="sidebar__link"><i class="fa-solid fa-calendar-days"></i> Calendar</a>
         <a href="{% url 'equipment_list' %}" class="sidebar__link is-active"><i class="fa-solid fa-cubes"></i> Equipment</a>
-        <a href="{% url 'create_ticket' %}" class="sidebar__link"><i class="fa-solid fa-plus"></i> Create Ticket</a>
+        {% if not user.is_technician_user %}
+          <a href="{% url 'create_ticket' %}" class="sidebar__link"><i class="fa-solid fa-plus"></i> Create Ticket</a>
+        {% endif %}
         <a href="{% url 'workers' %}" class="sidebar__link"><i class="fa-solid fa-users"></i> Workers</a>
         <a href="{% url 'analytics' %}" class="sidebar__link"><i class="fa-solid fa-chart-line"></i> Analytics</a>
         <a href="{% url 'settings' %}" class="sidebar__link"><i class="fa-solid fa-gear"></i> Settings</a>
@@ -74,7 +80,7 @@
               <i class="fa-solid fa-folder-open"></i> Open Work Orders: <strong>{{ open_count }}</strong>
             </div>
 
-            {% if equipment.status != 'scrapped' %}
+            {% if equipment.status != 'scrapped' and not user.is_technician_user %}
               <a href="{% url 'create_ticket' %}?equipment={{ equipment.id }}" class="btn btn--secondary"><i class="fa-solid fa-plus"></i> New Ticket for Equipment</a>
             {% endif %}
           </div>
@@ -160,7 +166,7 @@
                 </tr>
                 {% endfor %}
               {% else %}
-                <tr><td colspan="8" style="text-align:center;padding:2rem;">No maintenance requests have been recorded for this equipment. {% if equipment.status != 'scrapped' %}<a href="{% url 'create_ticket' %}?equipment={{ equipment.id }}">Create one now</a>{% endif %}</td></tr>
+                <tr><td colspan="8" style="text-align:center;padding:2rem;">No maintenance requests have been recorded for this equipment. {% if equipment.status != 'scrapped' and not user.is_technician_user %}<a href="{% url 'create_ticket' %}?equipment={{ equipment.id }}">Create one now</a>{% endif %}</td></tr>
               {% endif %}
             </tbody>
           </table>

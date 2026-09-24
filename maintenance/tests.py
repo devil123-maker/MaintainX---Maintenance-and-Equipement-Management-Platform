@@ -1,4 +1,4 @@
-from django.test import TestCase, Client
+from django.test import TestCase, Client, TransactionTestCase
 from django.urls import reverse
 from django.contrib.auth import get_user_model
 from equipment.models import Equipment
@@ -53,6 +53,9 @@ class MaintenanceTests(TestCase):
         self.assertEqual(response.status_code, 200)
 
     def test_request_assign_team(self):
+        self.team.members.add(self.user)
+        self.request.assigned_technician = self.user
+        self.request.save()
         response = self.client.post(
             reverse('request_assign_team', kwargs={'pk': self.request.pk}),
             data=json.dumps({'team_id': self.team.id}),
@@ -64,6 +67,11 @@ class MaintenanceTests(TestCase):
         self.assertEqual(self.request.status, 'in_progress')
 
     def test_request_complete(self):
+        self.team.members.add(self.user)
+        self.request.assigned_team = self.team
+        self.request.assigned_technician = self.user
+        self.request.status = 'in_progress'
+        self.request.save()
         response = self.client.post(
             reverse('request_complete', kwargs={'pk': self.request.pk}),
             data=json.dumps({'notes': 'Replaced seal', 'cost': 150.00}),
@@ -71,7 +79,7 @@ class MaintenanceTests(TestCase):
         )
         self.assertEqual(response.status_code, 200)
         self.request.refresh_from_db()
-        self.assertEqual(self.request.status, 'completed')
+        self.assertIn(self.request.status, ['completed', 'repaired'])
         self.assertTrue(MaintenanceHistory.objects.filter(maintenance_request=self.request).exists())
 
     def test_dashboard(self):
@@ -111,6 +119,11 @@ class MaintenanceTests(TestCase):
         self.assertEqual(float(req.duration_hours), 2.5)
 
     def test_gearguard_statuses(self):
+        self.team.members.add(self.user)
+        self.request.assigned_team = self.team
+        self.request.assigned_technician = self.user
+        self.request.status = 'in_progress'
+        self.request.save()
         response = self.client.put(
             reverse('request_detail', kwargs={'pk': self.request.pk}),
             data=json.dumps({'status': 'repaired'}),
@@ -134,7 +147,7 @@ class MaintenanceTests(TestCase):
             requested_by=self.user
         )
         self.assertEqual(req.assigned_team, self.team)
-        self.assertEqual(req.assigned_technician, tech2)
+        self.assertIsNone(req.assigned_technician)
 
     def test_technician_membership_validation(self):
         other_tech = User.objects.create_user(username='other@example.com', password='password123', user_type='technician')
@@ -179,11 +192,14 @@ class MaintenanceTests(TestCase):
             req.full_clean()
 
     def test_scrap_updates_equipment_status(self):
+        self.team.members.add(self.user)
         req = MaintenanceRequest.objects.create(
             title='Scrap Test Request',
             description='Testing scrap automation',
             equipment=self.equipment,
             requested_by=self.user,
+            assigned_team=self.team,
+            assigned_technician=self.user,
             status='in_progress'
         )
         req.status = 'scrap'
@@ -248,6 +264,11 @@ class MaintenanceTests(TestCase):
         self.assertContains(response, 'kanban-column')
 
     def test_kanban_status_update_api_success(self):
+        self.team.members.add(self.user)
+        self.request.assigned_team = self.team
+        self.request.assigned_technician = self.user
+        self.request.save()
+
         response = self.client.put(
             reverse('request_detail', kwargs={'pk': self.request.pk}),
             data=json.dumps({'status': 'in_progress'}),
@@ -258,6 +279,11 @@ class MaintenanceTests(TestCase):
         self.assertEqual(self.request.status, 'in_progress')
 
     def test_kanban_status_update_api_rejection(self):
+        self.team.members.add(self.user)
+        self.request.assigned_team = self.team
+        self.request.assigned_technician = self.user
+        self.request.status = 'in_progress'
+        self.request.save()
         self.request.status = 'repaired'
         self.request.save()
 
@@ -271,6 +297,8 @@ class MaintenanceTests(TestCase):
         self.assertEqual(self.request.status, 'repaired')
 
     def test_kanban_scrap_status_update_triggers_equipment_scrapped(self):
+        self.user.user_type = 'manager'
+        self.user.save()
         response = self.client.put(
             reverse('request_detail', kwargs={'pk': self.request.pk}),
             data=json.dumps({'status': 'scrap'}),
@@ -560,10 +588,10 @@ class GearGuardEndToEndIntegrationTests(TestCase):
         req = MaintenanceRequest.objects.get(id=ticket_id)
 
         # ----------------------------------------------------
-        # STEP 10: Auto-Fill Validation (Team & Tech inherited from Equipment)
+        # STEP 10: Auto-Fill Validation (Team inherited from Equipment, Technician is Unassigned)
         # ----------------------------------------------------
         self.assertEqual(req.assigned_team, team)
-        self.assertEqual(req.assigned_technician, tech_lead)
+        self.assertIsNone(req.assigned_technician)
 
         # ----------------------------------------------------
         # STEP 11: Request Initial State Verification
@@ -598,18 +626,17 @@ class GearGuardEndToEndIntegrationTests(TestCase):
         self.assertEqual(resp.status_code, 200)
         req_details = resp.json()
         self.assertEqual(req_details['id'], req.id)
-        self.assertEqual(req_details['assigned_technician'], tech_lead.id)
+        self.assertIsNone(req_details['assigned_technician'])
 
         # ----------------------------------------------------
-        # STEP 15: Status Progression: Move to 'in_progress'
+        # STEP 15: Technician Joins Request (Claims Ticket & Moves to In Progress)
         # ----------------------------------------------------
-        resp = self.client.put(
-            reverse('request_detail', kwargs={'pk': req.id}),
-            data=json.dumps({'status': 'in_progress'}),
-            content_type='application/json'
+        resp = self.client.post(
+            reverse('request_join', kwargs={'pk': req.id})
         )
         self.assertEqual(resp.status_code, 200)
         req.refresh_from_db()
+        self.assertEqual(req.assigned_technician, tech_lead)
         self.assertEqual(req.status, 'in_progress')
 
         # ----------------------------------------------------
@@ -642,7 +669,7 @@ class GearGuardEndToEndIntegrationTests(TestCase):
         )
         self.assertEqual(resp.status_code, 200)
         req.refresh_from_db()
-        self.assertEqual(req.status, 'completed')
+        self.assertIn(req.status, ['completed', 'repaired'])
 
         # ----------------------------------------------------
         # STEP 18: Maintenance History Audit Trail Created
@@ -787,6 +814,607 @@ class GearGuardEndToEndIntegrationTests(TestCase):
         resp_after_logout = self.client.get(reverse('dashboard'))
         self.assertEqual(resp_after_logout.status_code, 302)
         self.assertIn('login', resp_after_logout.url)
+
+
+class MaintenanceWorkflowOverhaulTests(TestCase):
+    """
+    Exhaustive verification of the GearGuard maintenance-request workflow:
+    1. Customer creates request -> team determined from equipment, tech unassigned, status new.
+    2. Customer cannot assign technician or alter status.
+    3. Eligible team technician can see and join request (status -> in_progress).
+    4. Non-member technician cannot join (403).
+    5. Already-assigned ticket returns 409 Conflict if another technician attempts to join.
+    6. Assigned technician performs work and marks repaired (status -> repaired).
+    7. Unassigned in_progress and direct new->repaired transitions are strictly prohibited.
+    8. Concurrency safety test: simultaneous join requests result in one winner and one 409.
+    """
+
+    def setUp(self):
+        self.client = Client()
+        self.customer = User.objects.create_user(
+            username='cust@gearguard.local',
+            email='cust@gearguard.local',
+            password='Password123!',
+            first_name='Alice Customer',
+            user_type='customer'
+        )
+        self.tech_a = User.objects.create_user(
+            username='techa@gearguard.local',
+            email='techa@gearguard.local',
+            password='Password123!',
+            first_name='Bob TechA',
+            user_type='technician'
+        )
+        self.tech_b = User.objects.create_user(
+            username='techb@gearguard.local',
+            email='techb@gearguard.local',
+            password='Password123!',
+            first_name='Charlie TechB',
+            user_type='technician'
+        )
+        self.outsider_tech = User.objects.create_user(
+            username='outsider@gearguard.local',
+            email='outsider@gearguard.local',
+            password='Password123!',
+            first_name='Dave Outsider',
+            user_type='technician'
+        )
+        self.manager = User.objects.create_user(
+            username='manager@gearguard.local',
+            email='manager@gearguard.local',
+            password='Password123!',
+            first_name='Eve Manager',
+            user_type='manager'
+        )
+
+        self.team = MaintenanceTeam.objects.create(
+            name='Hydraulics Rapid Response',
+            leader=self.tech_a
+        )
+        self.team.members.add(self.tech_a, self.tech_b)
+
+        self.equipment = Equipment.objects.create(
+            name='Stamping Press Pro 5000',
+            serial_number='SP-5000-X',
+            status='active',
+            maintenance_team=self.team,
+            default_technician=self.tech_a,
+            created_by=self.manager
+        )
+
+    def test_customer_creates_request_is_new_and_unassigned(self):
+        self.client.login(username='cust@gearguard.local', password='Password123!')
+        resp = self.client.post(
+            reverse('request_list'),
+            data=json.dumps({
+                'title': 'Pressure drop in hydraulic line',
+                'description': 'Continuous pressure warning beep on control panel.',
+                'equipment': self.equipment.id,
+                'priority': 'high'
+            }),
+            content_type='application/json'
+        )
+        self.assertEqual(resp.status_code, 201)
+        data = resp.json()
+        req = MaintenanceRequest.objects.get(id=data['id'])
+        
+        # Must resolve team from equipment
+        self.assertEqual(req.assigned_team, self.team)
+        # Must be unassigned regardless of equipment.default_technician
+        self.assertIsNone(req.assigned_technician)
+        # Must be in 'new' status
+        self.assertEqual(req.status, 'new')
+
+    def test_customer_cannot_assign_technician_on_creation(self):
+        self.client.login(username='cust@gearguard.local', password='Password123!')
+        resp = self.client.post(
+            reverse('request_list'),
+            data=json.dumps({
+                'title': 'Attempting tech assignment',
+                'description': 'Customer trying to force tech assignment.',
+                'equipment': self.equipment.id,
+                'assigned_technician': self.tech_a.id
+            }),
+            content_type='application/json'
+        )
+        self.assertEqual(resp.status_code, 403)
+        self.assertIn('Customers cannot assign technicians', resp.json().get('error', ''))
+
+    def test_customer_cannot_alter_technician_or_status_via_put(self):
+        req = MaintenanceRequest.objects.create(
+            title='Valve Leak',
+            description='Slow leak',
+            equipment=self.equipment,
+            requested_by=self.customer,
+            assigned_team=self.team,
+            status='new'
+        )
+        self.client.login(username='cust@gearguard.local', password='Password123!')
+        resp = self.client.put(
+            reverse('request_detail', kwargs={'pk': req.id}),
+            data=json.dumps({'assigned_technician': self.tech_a.id}),
+            content_type='application/json'
+        )
+        self.assertEqual(resp.status_code, 403)
+
+        resp2 = self.client.put(
+            reverse('request_detail', kwargs={'pk': req.id}),
+            data=json.dumps({'status': 'in_progress'}),
+            content_type='application/json'
+        )
+        self.assertEqual(resp2.status_code, 403)
+
+    def test_eligible_technician_joins_request_success(self):
+        req = MaintenanceRequest.objects.create(
+            title='Main Cylinder Replacement',
+            description='Seals completely worn out.',
+            equipment=self.equipment,
+            requested_by=self.customer,
+            assigned_team=self.team,
+            status='new'
+        )
+        self.client.login(username='techb@gearguard.local', password='Password123!')
+        resp = self.client.post(reverse('request_join', kwargs={'pk': req.id}))
+        self.assertEqual(resp.status_code, 200)
+        self.assertEqual(resp.json()['status'], 'in_progress')
+        
+        req.refresh_from_db()
+        self.assertEqual(req.assigned_technician, self.tech_b)
+        self.assertEqual(req.status, 'in_progress')
+
+    def test_non_team_technician_cannot_join(self):
+        req = MaintenanceRequest.objects.create(
+            title='Main Cylinder Replacement',
+            description='Seals completely worn out.',
+            equipment=self.equipment,
+            requested_by=self.customer,
+            assigned_team=self.team,
+            status='new'
+        )
+        self.client.login(username='outsider@gearguard.local', password='Password123!')
+        resp = self.client.post(reverse('request_join', kwargs={'pk': req.id}))
+        self.assertEqual(resp.status_code, 403)
+        self.assertIn('not a member', resp.json().get('error', ''))
+
+    def test_second_technician_cannot_join_already_claimed_ticket(self):
+        req = MaintenanceRequest.objects.create(
+            title='Piston Alignment',
+            description='Off center.',
+            equipment=self.equipment,
+            requested_by=self.customer,
+            assigned_team=self.team,
+            assigned_technician=self.tech_a,
+            status='in_progress'
+        )
+        self.client.login(username='techb@gearguard.local', password='Password123!')
+        resp = self.client.post(reverse('request_join', kwargs={'pk': req.id}))
+        self.assertEqual(resp.status_code, 409)
+        self.assertIn('already been claimed', resp.json().get('error', ''))
+
+    def test_assigned_technician_completes_work_as_repaired(self):
+        req = MaintenanceRequest.objects.create(
+            title='Filter Clogged',
+            description='Needs backwash and replacement.',
+            equipment=self.equipment,
+            requested_by=self.customer,
+            assigned_team=self.team,
+            assigned_technician=self.tech_a,
+            status='in_progress'
+        )
+        self.client.login(username='techa@gearguard.local', password='Password123!')
+        resp = self.client.post(
+            reverse('request_complete', kwargs={'pk': req.id}),
+            data=json.dumps({
+                'notes': 'Backwashed line and replaced 50-micron filter cartridge.',
+                'cost': 85.00
+            }),
+            content_type='application/json'
+        )
+        self.assertEqual(resp.status_code, 200)
+        req.refresh_from_db()
+        self.assertEqual(req.status, 'repaired')
+        self.assertIsNotNone(req.completed_date)
+
+    def test_non_assigned_technician_cannot_complete_request(self):
+        req = MaintenanceRequest.objects.create(
+            title='Filter Clogged',
+            description='Needs backwash.',
+            equipment=self.equipment,
+            requested_by=self.customer,
+            assigned_team=self.team,
+            assigned_technician=self.tech_a,
+            status='in_progress'
+        )
+        self.client.login(username='techb@gearguard.local', password='Password123!')
+        resp = self.client.post(
+            reverse('request_complete', kwargs={'pk': req.id}),
+            data=json.dumps({'notes': 'Sneaky finish'}),
+            content_type='application/json'
+        )
+        self.assertEqual(resp.status_code, 403)
+
+    def test_direct_transition_from_new_to_repaired_is_rejected(self):
+        from django.core.exceptions import ValidationError
+        req = MaintenanceRequest.objects.create(
+            title='Quick fix',
+            description='Trying to bypass in_progress',
+            equipment=self.equipment,
+            requested_by=self.customer,
+            assigned_team=self.team,
+            status='new'
+        )
+        req.status = 'repaired'
+        with self.assertRaises(ValidationError):
+            req.full_clean()
+
+    def test_in_progress_without_technician_is_rejected(self):
+        from django.core.exceptions import ValidationError
+        req = MaintenanceRequest(
+            title='No tech progress',
+            description='Cannot be in progress without tech',
+            equipment=self.equipment,
+            requested_by=self.customer,
+            assigned_team=self.team,
+            status='in_progress',
+            assigned_technician=None
+        )
+        with self.assertRaises(ValidationError):
+            req.full_clean()
+
+    def test_scrapped_equipment_ticket_cannot_be_joined(self):
+        self.equipment.status = 'scrapped'
+        self.equipment.save()
+        # Create unassigned request via manager/elevated or direct save before scrapping
+        req = MaintenanceRequest(
+            title='Post-scrap maintenance',
+            description='Should not be joinable',
+            equipment=self.equipment,
+            requested_by=self.customer,
+            assigned_team=self.team,
+            status='new'
+        )
+        # Bypass initial clean to simulate an existing request for equipment later scrapped
+        super(MaintenanceRequest, req).save()
+
+        self.client.login(username='techa@gearguard.local', password='Password123!')
+        resp = self.client.post(reverse('request_join', kwargs={'pk': req.id}))
+        self.assertEqual(resp.status_code, 400)
+        self.assertIn('scrapped equipment', resp.json().get('error', ''))
+
+
+    def test_technician_cannot_create_normal_customer_corrective_ticket(self):
+        self.client.login(username='techa@gearguard.local', password='Password123!')
+        # 1. API request_list block
+        resp = self.client.post(
+            reverse('request_list'),
+            data=json.dumps({
+                'title': 'Tech trying to create corrective ticket',
+                'description': 'Should be rejected',
+                'equipment': self.equipment.id,
+                'request_type': 'corrective'
+            }),
+            content_type='application/json'
+        )
+        self.assertEqual(resp.status_code, 403)
+        self.assertIn('Technicians cannot create customer corrective tickets', resp.json().get('error', ''))
+
+        # 2. Direct URL GET create_ticket_view block
+        resp_get = self.client.get(reverse('create_ticket'))
+        self.assertEqual(resp_get.status_code, 403)
+
+        # 3. Direct form POST create_ticket_view block
+        resp_post = self.client.post(reverse('create_ticket'), data={
+            'title': 'Direct Form Post',
+            'description': 'Should fail',
+            'equipment': self.equipment.id,
+            'priority': 'medium'
+        })
+        self.assertEqual(resp_post.status_code, 403)
+
+    def test_customer_can_see_create_ticket_in_ui(self):
+        self.client.login(username='cust@gearguard.local', password='Password123!')
+        resp = self.client.get(reverse('tickets'))
+        self.assertEqual(resp.status_code, 200)
+        self.assertContains(resp, 'Create Ticket')
+        self.assertContains(resp, 'New Ticket')
+
+    def test_technician_cannot_see_create_ticket_in_ui(self):
+        self.client.login(username='techa@gearguard.local', password='Password123!')
+        resp = self.client.get(reverse('tickets'))
+        self.assertEqual(resp.status_code, 200)
+        self.assertNotContains(resp, 'Create Ticket')
+        self.assertNotContains(resp, 'New Ticket')
+        self.assertContains(resp, 'Available Requests')
+        self.assertContains(resp, 'My Active Requests')
+
+        resp_dash = self.client.get(reverse('dashboard'))
+        self.assertEqual(resp_dash.status_code, 200)
+        self.assertNotContains(resp_dash, 'Create Ticket')
+        self.assertNotContains(resp_dash, 'New Ticket')
+
+    def test_customer_cannot_mark_request_repaired(self):
+        req = MaintenanceRequest.objects.create(
+            title='Customer trying to repair',
+            description='Should be blocked',
+            equipment=self.equipment,
+            requested_by=self.customer,
+            assigned_team=self.team,
+            assigned_technician=self.tech_a,
+            status='in_progress'
+        )
+        self.client.login(username='cust@gearguard.local', password='Password123!')
+        resp = self.client.post(
+            reverse('request_complete', kwargs={'pk': req.id}),
+            data=json.dumps({'notes': 'Customer claiming repair'}),
+            content_type='application/json'
+        )
+        self.assertEqual(resp.status_code, 403)
+
+    def test_unassigned_request_cannot_bypass_join_via_status_update(self):
+        req = MaintenanceRequest.objects.create(
+            title='Bypass test ticket',
+            description='Trying to jump to in_progress without join',
+            equipment=self.equipment,
+            requested_by=self.customer,
+            assigned_team=self.team,
+            status='new'
+        )
+        self.client.login(username='techa@gearguard.local', password='Password123!')
+        resp = self.client.put(
+            reverse('request_detail', kwargs={'pk': req.id}),
+            data=json.dumps({'status': 'in_progress'}),
+            content_type='application/json'
+        )
+        self.assertEqual(resp.status_code, 400)
+        self.assertIn('Cannot move unassigned request to In Progress', resp.json().get('error', ''))
+
+    def test_reports_handle_unassigned_technician(self):
+        # Create unassigned request
+        MaintenanceRequest.objects.create(
+            title='Report unassigned test',
+            description='Checking report aggregation',
+            equipment=self.equipment,
+            requested_by=self.customer,
+            assigned_team=self.team,
+            status='new'
+        )
+        self.client.login(username='manager@gearguard.local', password='Password123!')
+        resp = self.client.get(reverse('analytics'))
+        self.assertEqual(resp.status_code, 200)
+        resp_json = self.client.get(reverse('analytics'), HTTP_ACCEPT='application/json')
+        self.assertEqual(resp_json.status_code, 200)
+        data = resp_json.json()
+        self.assertIn('by_technician', data)
+        # Should cleanly have 'Unassigned' in technician reports
+        tech_names = [item['technician'] for item in data['by_technician']]
+        self.assertIn('Unassigned', tech_names)
+
+    def test_technician_enters_and_opens_request_detail_page_html(self):
+        req = MaintenanceRequest.objects.create(
+            title='Main Stamping Hydraulic Failure',
+            description='Hydraulic piston leaking fluid at seal B.',
+            equipment=self.equipment,
+            requested_by=self.customer,
+            assigned_team=self.team,
+            status='new'
+        )
+        self.client.login(username='techa@gearguard.local', password='Password123!')
+        
+        # 1. Tech joins
+        join_resp = self.client.post(reverse('request_join', kwargs={'pk': req.id}))
+        self.assertEqual(join_resp.status_code, 200)
+        req.refresh_from_db()
+        self.assertEqual(req.status, 'in_progress')
+        self.assertEqual(req.assigned_technician, self.tech_a)
+
+        # 2. Tech enters / opens the existing request detail page
+        detail_resp = self.client.get(
+            reverse('request_detail', kwargs={'pk': req.id}),
+            HTTP_SEC_FETCH_DEST='document'
+        )
+        self.assertEqual(detail_resp.status_code, 200)
+        self.assertTemplateUsed(detail_resp, 'ticket_detail.html')
+        self.assertContains(detail_resp, 'Main Stamping Hydraulic Failure')
+        self.assertContains(detail_resp, 'Hydraulic piston leaking fluid')
+        self.assertContains(detail_resp, 'In Progress')
+        self.assertContains(detail_resp, 'Stamping Press Pro 5000')
+        self.assertContains(detail_resp, 'Hydraulics Rapid Response')
+        self.assertContains(detail_resp, 'Mark as Repaired')
+
+    def test_technician_enters_work_information_and_marks_repaired(self):
+        req = MaintenanceRequest.objects.create(
+            title='CNC Spindle Overheating',
+            description='Bearing noise and high heat.',
+            equipment=self.equipment,
+            requested_by=self.customer,
+            assigned_team=self.team,
+            assigned_technician=self.tech_a,
+            status='in_progress'
+        )
+        self.client.login(username='techa@gearguard.local', password='Password123!')
+
+        # Form submission on ticket detail page
+        resp = self.client.post(
+            reverse('request_complete', kwargs={'pk': req.id}),
+            data={
+                'notes': 'Replaced bearing set and lubricated spindle assembly.',
+                'duration_value': '3.5',
+                'duration_unit': 'hours',
+                'parts_used': 'Spindle Bearing 6204-2RS',
+                'cost': '85.50'
+            }
+        )
+        # Should redirect to request_detail
+        self.assertEqual(resp.status_code, 302)
+        req.refresh_from_db()
+        self.assertEqual(req.status, 'repaired')
+        self.assertEqual(float(req.duration_value), 3.5)
+        self.assertEqual(req.duration_unit, 'hours')
+        self.assertIsNotNone(req.completed_date)
+
+        # Verify history
+        history = MaintenanceHistory.objects.filter(maintenance_request=req).first()
+        self.assertIsNotNone(history)
+        self.assertIn('Replaced bearing set', history.notes)
+        self.assertEqual(history.parts_used, 'Spindle Bearing 6204-2RS')
+        self.assertEqual(float(history.cost), 85.50)
+        self.assertEqual(history.performed_by, self.tech_a)
+
+    def test_full_customer_to_technician_manual_workflow(self):
+        # 1. Customer creates corrective request
+        self.client.login(username='cust@gearguard.local', password='Password123!')
+        create_resp = self.client.post(
+            reverse('request_list'),
+            data=json.dumps({
+                'title': 'Emergency Valve Failure',
+                'description': 'Main shutoff valve stuck open.',
+                'equipment': self.equipment.id,
+                'priority': 'urgent'
+            }),
+            content_type='application/json'
+        )
+        self.assertEqual(create_resp.status_code, 201)
+        ticket_id = create_resp.json()['id']
+        req = MaintenanceRequest.objects.get(id=ticket_id)
+        self.assertEqual(req.status, 'new')
+        self.assertIsNone(req.assigned_technician)
+        self.assertEqual(req.assigned_team, self.team)
+
+        # 2. Technician A (Amit) logs in
+        self.client.login(username='techa@gearguard.local', password='Password123!')
+        tickets_page = self.client.get(reverse('tickets'))
+        self.assertNotContains(tickets_page, 'Create Ticket')
+        self.assertNotContains(tickets_page, 'New Ticket')
+        self.assertContains(tickets_page, 'Available Requests')
+        self.assertContains(tickets_page, 'My Active Requests')
+
+        # 3. Technician A sees request in Available Requests
+        avail_resp = self.client.get(reverse('tickets') + '?tab=available')
+        self.assertContains(avail_resp, 'Emergency Valve Failure')
+        self.assertContains(avail_resp, 'data-join-request-btn')
+
+        # 4. Technician A clicks Join Request
+        join_resp = self.client.post(reverse('request_join', kwargs={'pk': ticket_id}))
+        self.assertEqual(join_resp.status_code, 200)
+        req.refresh_from_db()
+        self.assertEqual(req.status, 'in_progress')
+        self.assertEqual(req.assigned_technician, self.tech_a)
+
+        # 5. Technician A opens existing request detail page
+        detail_resp = self.client.get(
+            reverse('request_detail', kwargs={'pk': ticket_id}),
+            HTTP_SEC_FETCH_DEST='document'
+        )
+        self.assertEqual(detail_resp.status_code, 200)
+        self.assertContains(detail_resp, 'Emergency Valve Failure')
+        self.assertContains(detail_resp, 'In Progress')
+        self.assertContains(detail_resp, self.tech_a.get_full_name() or self.tech_a.username)
+
+        # 6. Technician A enters work info and marks repaired
+        complete_resp = self.client.post(
+            reverse('request_complete', kwargs={'pk': ticket_id}),
+            data={
+                'notes': 'Freed stuck valve mechanism, replaced seal ring and tested under pressure.',
+                'duration_value': '1.5',
+                'duration_unit': 'hours'
+            }
+        )
+        self.assertEqual(complete_resp.status_code, 302)
+        req.refresh_from_db()
+        self.assertEqual(req.status, 'repaired')
+
+        # 7. Second Technician B (Jay) logs in and verifies cannot claim or modify
+        self.client.login(username='techb@gearguard.local', password='Password123!')
+        second_join = self.client.post(reverse('request_join', kwargs={'pk': ticket_id}))
+        self.assertEqual(second_join.status_code, 409)
+
+        # 8. Customer logs in and verifies repaired status and assigned technician
+        self.client.login(username='cust@gearguard.local', password='Password123!')
+        cust_view = self.client.get(
+            reverse('request_detail', kwargs={'pk': ticket_id}),
+            HTTP_SEC_FETCH_DEST='document'
+        )
+        self.assertEqual(cust_view.status_code, 200)
+        self.assertContains(cust_view, 'Repaired')
+        self.assertContains(cust_view, self.tech_a.get_full_name() or self.tech_a.username)
+
+
+class MaintenanceWorkflowConcurrencyTests(TransactionTestCase):
+    def setUp(self):
+        self.customer = User.objects.create_user(
+            username='cust_conc@gearguard.local',
+            email='cust_conc@gearguard.local',
+            password='Password123!',
+            first_name='Cust',
+            user_type='customer'
+        )
+        self.tech_a = User.objects.create_user(
+            username='techa_conc@gearguard.local',
+            email='techa_conc@gearguard.local',
+            password='Password123!',
+            first_name='TechA',
+            user_type='technician'
+        )
+        self.tech_b = User.objects.create_user(
+            username='techb_conc@gearguard.local',
+            email='techb_conc@gearguard.local',
+            password='Password123!',
+            first_name='TechB',
+            user_type='technician'
+        )
+        self.team = MaintenanceTeam.objects.create(
+            name='Concurrency Mechanics',
+            leader=self.tech_a
+        )
+        self.team.members.add(self.tech_a, self.tech_b)
+        self.equipment = Equipment.objects.create(
+            name='Hydraulic Press Conc',
+            serial_number='HP-CONC-001',
+            status='active',
+            maintenance_team=self.team,
+            created_by=self.customer
+        )
+
+    def test_concurrency_safe_join_race_condition(self):
+        """
+        Verify concurrency safety when two technicians attempt to join simultaneously.
+        """
+        import threading
+        from django.db import connection
+        req = MaintenanceRequest.objects.create(
+            title='High Priority Emergency Leak',
+            description='Both techs rush to claim it.',
+            equipment=self.equipment,
+            requested_by=self.customer,
+            assigned_team=self.team,
+            status='new'
+        )
+
+        results = []
+
+        def join_as_tech(username):
+            try:
+                c = Client()
+                c.login(username=username, password='Password123!')
+                r = c.post(reverse('request_join', kwargs={'pk': req.id}))
+                results.append((username, r.status_code, r.json()))
+            finally:
+                connection.close()
+
+        t1 = threading.Thread(target=join_as_tech, args=('techa_conc@gearguard.local',))
+        t2 = threading.Thread(target=join_as_tech, args=('techb_conc@gearguard.local',))
+
+        t1.start()
+        t2.start()
+        t1.join()
+        t2.join()
+
+        status_codes = [r[1] for r in results]
+        self.assertIn(200, status_codes)
+        self.assertIn(409, status_codes)
+        req.refresh_from_db()
+        self.assertEqual(req.status, 'in_progress')
+        self.assertIn(req.assigned_technician, [self.tech_a, self.tech_b])
 
 
 

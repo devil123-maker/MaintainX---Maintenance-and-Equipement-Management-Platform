@@ -1,7 +1,7 @@
 from django.urls import path
 from .views import (
     team_list, team_detail, team_add_member, team_remove_member,
-    request_list, request_detail, request_assign_team, request_complete,
+    request_list, request_detail, request_assign_team, request_complete, request_join,
     history_list, history_detail, dashboard,
     tickets_view, create_ticket_view, workers_view, analytics_view, settings_view,
     calendar_view
@@ -17,6 +17,7 @@ urlpatterns = [
     # Requests
     path('requests/', request_list, name='request_list'),
     path('requests/<int:pk>/', request_detail, name='request_detail'),
+    path('requests/<int:pk>/join/', request_join, name='request_join'),
     path('requests/<int:pk>/assign_team/', request_assign_team, name='request_assign_team'),
     path('requests/<int:pk>/complete/', request_complete, name='request_complete'),
     

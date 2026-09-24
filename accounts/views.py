@@ -36,7 +36,10 @@ def signup(request):
         )
 
         messages.success(request, "Account created successfully.")
-        return redirect("login")
+        response = redirect("login")
+        # Ensure any pre-existing remembered_email cookie from a previous user is cleared
+        response.delete_cookie('remembered_email')
+        return response
 
     return render(request, "accounts/signup.html")
 
@@ -45,7 +48,6 @@ def login(request):
         return redirect('dashboard')
 
     if request.method == "POST":
-
         email = request.POST.get("email")
         password = request.POST.get("password")
         remember = request.POST.get("remember")
@@ -56,13 +58,14 @@ def login(request):
             auth_login(request, user)
             response = redirect('dashboard')
             if remember:
-                # Keep user logged in for 2 weeks (14 days)
-                request.session.set_expiry(1209600)
-                # Store email in cookie for 30 days to autofill login field
+                # Case 3: Remember Me is enabled
+                request.session['remember_me'] = True
+                request.session.set_expiry(1209600)  # Keep user logged in for 14 days
                 response.set_cookie('remembered_email', email, max_age=2592000, httponly=True, samesite='Lax')
             else:
-                # Session expires when the browser is closed & clear cookie
-                request.session.set_expiry(0)
+                # Case 2: Remember Me is disabled
+                request.session['remember_me'] = False
+                request.session.set_expiry(0)  # Session expires on browser close
                 response.delete_cookie('remembered_email')
             return response
 
@@ -85,9 +88,24 @@ def logout_view(request):
     storage = get_messages(request)
     for _ in storage:
         pass
+
+    remember_me = request.session.get('remember_me', False)
+    user_email = request.COOKIES.get('remembered_email', '')
+    if request.user.is_authenticated and not user_email:
+        user_email = request.user.email or request.user.username
+
     auth_logout(request)
     messages.success(request, "You have been logged out successfully.")
-    return redirect("login")
+    response = redirect("login")
+
+    if remember_me and user_email:
+        # Case 3: User enabled Remember Me -> preserve / refresh remembered_email cookie
+        response.set_cookie('remembered_email', user_email, max_age=2592000, httponly=True, samesite='Lax')
+    else:
+        # Case 2: User did not enable Remember Me -> delete cookie
+        response.delete_cookie('remembered_email')
+
+    return response
 
 
     
