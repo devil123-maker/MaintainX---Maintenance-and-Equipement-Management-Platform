@@ -13,13 +13,18 @@ from equipment.models import Equipment
 from accounts.models import User
 
 
-@login_required
 @require_http_methods(["POST"])
 def request_join(request, pk):
     """
     Dedicated atomic action for eligible technicians to claim/join an unassigned NEW request.
     Enforces row locking with select_for_update() to prevent race conditions.
     """
+    if not request.user.is_authenticated:
+        return JsonResponse({
+            'success': False,
+            'error': 'Authentication required. Please log in.'
+        }, status=401)
+
     user = request.user
     is_elevated = user.is_staff or user.is_superuser or user.user_type in ['admin', 'manager']
     if not (user.is_technician_user or is_elevated):
@@ -313,6 +318,7 @@ def request_list(request):
 
 
 @login_required
+@ensure_csrf_cookie
 def request_detail(request, pk):
     maintenance_request = get_object_or_404(MaintenanceRequest, pk=pk)
     

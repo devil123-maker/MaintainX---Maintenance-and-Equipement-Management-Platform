@@ -4,6 +4,7 @@
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <meta name="csrf-token" content="{{ csrf_token }}">
   <title>Tickets — GearGuard</title>
   <link rel="preconnect" href="https://fonts.googleapis.com">
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
@@ -136,21 +137,21 @@
                     </span>
                     {% if req.user_can_join %}
                       <button type="button" class="btn btn--sm btn--primary" data-join-request-btn data-ticket-id="{{ req.id }}" style="margin-left:0.5rem;padding:0.2rem 0.5rem;font-size:0.75rem;">
-                        <i class="fa-solid fa-hand-holding-hand"></i> Join
+                        <i class="fa-solid fa-hand-holding-hand"></i> Join Request
                       </button>
                     {% elif req.status == 'in_progress' and req.user_is_assigned %}
                       <a href="{% url 'request_detail' req.id %}" class="btn btn--sm btn--secondary" data-open-ticket-btn style="margin-left:0.5rem;padding:0.2rem 0.5rem;font-size:0.75rem;">
-                        <i class="fa-solid fa-arrow-up-right-from-square"></i> Open
+                        <i class="fa-solid fa-arrow-up-right-from-square"></i> Open / Continue Work
                       </a>
                       <button type="button" class="btn btn--sm btn--success" data-complete-request-btn data-ticket-id="{{ req.id }}" style="margin-left:0.3rem;padding:0.2rem 0.5rem;font-size:0.75rem;">
-                        <i class="fa-solid fa-check"></i> Repaired
+                        <i class="fa-solid fa-check"></i> Mark as Repaired
                       </button>
                     {% elif req.status == 'in_progress' and req.user_can_repair %}
                       <a href="{% url 'request_detail' req.id %}" class="btn btn--sm btn--secondary" data-open-ticket-btn style="margin-left:0.5rem;padding:0.2rem 0.5rem;font-size:0.75rem;">
-                        <i class="fa-solid fa-arrow-up-right-from-square"></i> Open
+                        <i class="fa-solid fa-arrow-up-right-from-square"></i> Open Ticket
                       </a>
                       <button type="button" class="btn btn--sm btn--success" data-complete-request-btn data-ticket-id="{{ req.id }}" style="margin-left:0.3rem;padding:0.2rem 0.5rem;font-size:0.75rem;">
-                        <i class="fa-solid fa-check"></i> Repaired
+                        <i class="fa-solid fa-check"></i> Mark as Repaired
                       </button>
                     {% endif %}
                   </td>

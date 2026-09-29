@@ -315,6 +315,8 @@
   function getCsrfToken() {
     const input = document.querySelector("[name=csrfmiddlewaretoken]");
     if (input && input.value) return input.value;
+    const meta = document.querySelector('meta[name="csrf-token"]');
+    if (meta && meta.getAttribute("content")) return meta.getAttribute("content");
     let cookieValue = "";
     if (document.cookie && document.cookie !== "") {
       const cookies = document.cookie.split(";");
@@ -421,7 +423,20 @@
     let draggedCard = null;
     let sourceStatus = null;
 
+    // Prevent drag from starting on interactive elements inside kanban cards
+    document.addEventListener("mousedown", (e) => {
+      if (e.target.closest("button, a, select, input, [data-card-actions], [data-join-request-btn], [data-complete-request-btn]")) {
+        e.stopPropagation();
+      }
+    });
+
     document.addEventListener("dragstart", (e) => {
+      // Do not initiate card drag if the user clicked an interactive control
+      if (e.target.closest("button, a, select, input, [data-card-actions], [data-join-request-btn], [data-complete-request-btn]")) {
+        e.preventDefault();
+        return;
+      }
+
       const card = e.target.closest(".kanban-card");
       if (!card) return;
 
@@ -784,6 +799,7 @@
       if (!btn) return;
 
       e.preventDefault();
+      e.stopPropagation();
       const ticketId = btn.getAttribute("data-ticket-id");
       if (!ticketId) return;
 
@@ -801,7 +817,20 @@
           credentials: "same-origin"
         });
 
-        const data = await response.json();
+        let data = {};
+        const rawText = await response.text();
+        try {
+          data = JSON.parse(rawText);
+        } catch (parseErr) {
+          if (response.status === 403) {
+            throw new Error("Permission denied or CSRF token verification failed.");
+          } else if (response.status === 401) {
+            throw new Error("Authentication required. Please log in.");
+          } else {
+            throw new Error(`Server returned HTTP ${response.status}: ${response.statusText}`);
+          }
+        }
+
         if (!response.ok || data.success === false) {
           let msg = "Failed to join request.";
           if (typeof data.error === "string") msg = data.error;
@@ -825,17 +854,17 @@
           card.setAttribute("data-status", "in_progress");
           const techLabel = card.querySelector("[data-card-tech-label]");
           if (techLabel) {
-            techLabel.textContent = techName;
+            techLabel.innerHTML = `<span>${techName}</span>`;
           }
 
           const actionsContainer = card.querySelector("[data-card-actions]");
           if (actionsContainer) {
             actionsContainer.innerHTML = `
-              <div style="display:flex;gap:0.4rem;flex-direction:column;width:100%;">
-                <a href="/requests/${ticketId}/" class="btn btn--sm btn--secondary" data-open-ticket-btn style="width:100%;text-align:center;">
+              <div style="display:flex;gap:0.4rem;flex-direction:column;width:100%;" draggable="false">
+                <a href="/requests/${ticketId}/" class="btn btn--sm btn--secondary" data-open-ticket-btn draggable="false" style="width:100%;text-align:center;">
                   <i class="fa-solid fa-arrow-up-right-from-square"></i> Open / Continue Work
                 </a>
-                <button type="button" class="btn btn--sm btn--success" data-complete-request-btn data-ticket-id="${ticketId}" style="width:100%;">
+                <button type="button" class="btn btn--sm btn--success" data-complete-request-btn data-ticket-id="${ticketId}" draggable="false" style="width:100%;">
                   <i class="fa-solid fa-check"></i> Mark as Repaired
                 </button>
               </div>
@@ -868,10 +897,10 @@
           if (rowJoinBtn) {
             rowJoinBtn.outerHTML = `
               <a href="/requests/${ticketId}/" class="btn btn--sm btn--secondary" data-open-ticket-btn style="margin-left:0.5rem;padding:0.2rem 0.5rem;font-size:0.75rem;">
-                <i class="fa-solid fa-arrow-up-right-from-square"></i> Open
+                <i class="fa-solid fa-arrow-up-right-from-square"></i> Open / Continue Work
               </a>
               <button type="button" class="btn btn--sm btn--success" data-complete-request-btn data-ticket-id="${ticketId}" style="margin-left:0.3rem;padding:0.2rem 0.5rem;font-size:0.75rem;">
-                <i class="fa-solid fa-check"></i> Repaired
+                <i class="fa-solid fa-check"></i> Mark as Repaired
               </button>
             `;
           }
@@ -892,7 +921,8 @@
         btn.disabled = false;
         btn.innerHTML = originalHtml;
         showToast(err.message || "Failed to join request");
-        if (err.message && err.message.toLowerCase().includes("already been assigned")) {
+        const msg = (err.message || "").toLowerCase();
+        if (msg.includes("already been assigned") || msg.includes("already been claimed")) {
           btn.remove();
         }
       }
@@ -905,6 +935,7 @@
       if (!btn) return;
 
       e.preventDefault();
+      e.stopPropagation();
       const ticketId = btn.getAttribute("data-ticket-id");
       if (!ticketId) return;
 
@@ -923,7 +954,18 @@
           body: JSON.stringify({ status: "repaired", notes: "Marked as repaired by technician" }),
         });
 
-        const data = await response.json();
+        let data = {};
+        const rawText = await response.text();
+        try {
+          data = JSON.parse(rawText);
+        } catch (parseErr) {
+          if (response.status === 403) {
+            throw new Error("Permission denied. Only assigned technician or manager can mark repaired.");
+          } else {
+            throw new Error(`Server returned HTTP ${response.status}: ${response.statusText}`);
+          }
+        }
+
         if (!response.ok || data.success === false) {
           let msg = "Failed to mark as repaired.";
           if (typeof data.error === "string") msg = data.error;

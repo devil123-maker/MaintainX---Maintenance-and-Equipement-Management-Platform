@@ -1,4 +1,4 @@
-from django.urls import path, reverse_lazy
+from django.urls import path, include, reverse_lazy
 from django.contrib.auth import views as auth_views
 from . import views
 
@@ -28,4 +28,8 @@ urlpatterns = [
     path('reset/done/', auth_views.PasswordResetCompleteView.as_view(
         template_name='accounts/password_reset_complete.html'
     ), name='password_reset_complete'),
+
+    # django-allauth routes (Google OAuth / SocialAccount)
+    path('', include('allauth.urls')),
 ]
+

@@ -89,7 +89,7 @@
                 </div>
               </div>
 
-              {% if request.user.is_customer_user %}
+              {% if user.is_customer_user or request.user.is_customer_user %}
                 <div class="form-row" id="customer-team-info-row" style="margin-bottom:1rem;">
                   <div class="form-group" style="width:100%;">
                     <label class="form-label">Responsible Maintenance Team</label>

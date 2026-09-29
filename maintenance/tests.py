@@ -1118,6 +1118,40 @@ class MaintenanceWorkflowOverhaulTests(TestCase):
         self.assertContains(resp, 'Create Ticket')
         self.assertContains(resp, 'New Ticket')
 
+    def test_customer_create_ticket_form_does_not_contain_technician_field(self):
+        self.client.login(username='cust@gearguard.local', password='Password123!')
+        resp = self.client.get(reverse('create_ticket'))
+        self.assertEqual(resp.status_code, 200)
+        content = resp.content.decode()
+        
+        # Verify customer form fields present
+        self.assertIn('name="title"', content)
+        self.assertIn('name="equipment"', content)
+        self.assertIn('name="priority"', content)
+        self.assertIn('name="description"', content)
+        self.assertIn('Responsible Maintenance Team', content)
+
+        # Verify technician selector is completely absent for customer
+        self.assertNotIn('name="assigned_technician"', content)
+        self.assertNotIn('Select Technician', content)
+        self.assertNotIn('Assigned Technician', content)
+
+        # Verify submission creates unassigned request with team derived from equipment
+        post_resp = self.client.post(reverse('create_ticket'), {
+            'title': 'Leaking hydraulic valve',
+            'description': 'Hydraulic fluid is pooling under the press unit.',
+            'equipment': self.equipment.id,
+            'priority': 'high',
+            'request_type': 'corrective'
+        })
+        self.assertEqual(post_resp.status_code, 302)
+        created_req = MaintenanceRequest.objects.filter(equipment=self.equipment, title='Leaking hydraulic valve').first()
+        self.assertIsNotNone(created_req)
+        self.assertEqual(created_req.requested_by, self.customer)
+        self.assertEqual(created_req.assigned_team, self.team)
+        self.assertIsNone(created_req.assigned_technician)
+        self.assertEqual(created_req.status, 'new')
+
     def test_technician_cannot_see_create_ticket_in_ui(self):
         self.client.login(username='techa@gearguard.local', password='Password123!')
         resp = self.client.get(reverse('tickets'))

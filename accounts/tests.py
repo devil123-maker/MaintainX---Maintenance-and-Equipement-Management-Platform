@@ -225,5 +225,83 @@ class AccountsTests(TestCase):
         self.assertTrue(cust.is_customer_user)
         self.assertFalse(cust.can_manage_equipment)
 
+    def test_login_page_renders_continue_with_google_button(self):
+        response = self.client.get(self.login_url)
+        self.assertEqual(response.status_code, 200)
+        self.assertContains(response, 'Continue with Google')
+        self.assertContains(response, '/accounts/google/login/')
+
+    def test_signup_page_renders_continue_with_google_button(self):
+        response = self.client.get(self.signup_url)
+        self.assertEqual(response.status_code, 200)
+        self.assertContains(response, 'Continue with Google')
+        self.assertContains(response, '/accounts/google/login/')
+
+    def test_google_oauth_urls_resolved(self):
+        from django.urls import resolve
+        login_match = resolve('/accounts/google/login/')
+        callback_match = resolve('/accounts/google/login/callback/')
+        self.assertIsNotNone(login_match)
+        self.assertIsNotNone(callback_match)
+
+    def test_custom_social_account_adapter_new_user_role_is_customer(self):
+        from accounts.adapters import CustomSocialAccountAdapter
+        from allauth.socialaccount.models import SocialLogin, SocialAccount
+        adapter = CustomSocialAccountAdapter()
+        new_user = User(username='googleuser@example.com', email='googleuser@example.com')
+        socialaccount = SocialAccount(provider='google', uid='123456789', extra_data={'name': 'Google User', 'email': 'googleuser@example.com'})
+        sociallogin = SocialLogin(user=new_user, account=socialaccount)
+
+        populated_user = adapter.populate_user(
+            request=None,
+            sociallogin=sociallogin,
+            data={'email': 'googleuser@example.com', 'name': 'Google User'}
+        )
+        self.assertEqual(populated_user.user_type, 'customer')
+        self.assertTrue(populated_user.is_customer_user)
+        self.assertFalse(populated_user.is_technician_user)
+        self.assertEqual(populated_user.first_name, 'Google User')
+
+    def test_custom_social_account_adapter_existing_technician_preserves_role(self):
+        from accounts.adapters import CustomSocialAccountAdapter
+        from allauth.socialaccount.models import SocialLogin, SocialAccount
+        existing_tech = User.objects.create_user(
+            username='tech_google@example.com',
+            email='tech_google@example.com',
+            password='password123',
+            user_type='technician',
+            first_name='Existing Technician'
+        )
+        adapter = CustomSocialAccountAdapter()
+        socialaccount = SocialAccount(user=existing_tech, provider='google', uid='987654321', extra_data={'name': 'Existing Technician'})
+        sociallogin = SocialLogin(user=existing_tech, account=socialaccount)
+
+        populated_user = adapter.populate_user(
+            request=None,
+            sociallogin=sociallogin,
+            data={'email': 'tech_google@example.com'}
+        )
+        self.assertEqual(populated_user.user_type, 'technician')
+        self.assertTrue(populated_user.is_technician_user)
+        self.assertFalse(populated_user.is_customer_user)
+
+    def test_google_provider_scopes_and_settings(self):
+        from django.conf import settings
+        self.assertIn('allauth.socialaccount.providers.google', settings.INSTALLED_APPS)
+        self.assertIn('allauth.account.auth_backends.AuthenticationBackend', settings.AUTHENTICATION_BACKENDS)
+        self.assertEqual(settings.SITE_ID, 1)
+        google_config = settings.SOCIALACCOUNT_PROVIDERS.get('google', {})
+        self.assertIn('SCOPE', google_config)
+        self.assertEqual(google_config['SCOPE'], ['profile', 'email'])
+
+    def test_jwt_and_jwtkit_available(self):
+        import jwt
+        from allauth.socialaccount.internal import jwtkit
+        self.assertTrue(hasattr(jwt, 'decode'))
+        self.assertTrue(hasattr(jwtkit, 'verify_and_decode'))
+
+
+
+
 
 

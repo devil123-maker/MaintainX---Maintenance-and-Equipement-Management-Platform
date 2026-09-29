@@ -47,34 +47,34 @@
       </div>
     {% endif %}
   </div>
-  <div class="kanban-card__actions" style="margin-top:0.5rem;" data-card-actions>
+  <div class="kanban-card__actions" style="margin-top:0.5rem;" data-card-actions draggable="false">
     {% if req.user_can_join %}
-      <button type="button" class="btn btn--sm btn--primary" data-join-request-btn data-ticket-id="{{ req.id }}" style="width:100%;">
+      <button type="button" class="btn btn--sm btn--primary" data-join-request-btn data-ticket-id="{{ req.id }}" draggable="false" style="width:100%;">
         <i class="fa-solid fa-hand-holding-hand"></i> Join Request
       </button>
     {% elif req.status == 'in_progress' and req.user_is_assigned %}
-      <div style="display:flex;gap:0.4rem;flex-direction:column;width:100%;">
-        <a href="{% url 'request_detail' req.id %}" class="btn btn--sm btn--secondary" data-open-ticket-btn style="width:100%;text-align:center;">
+      <div style="display:flex;gap:0.4rem;flex-direction:column;width:100%;" draggable="false">
+        <a href="{% url 'request_detail' req.id %}" class="btn btn--sm btn--secondary" data-open-ticket-btn draggable="false" style="width:100%;text-align:center;">
           <i class="fa-solid fa-arrow-up-right-from-square"></i> Open / Continue Work
         </a>
-        <button type="button" class="btn btn--sm btn--success" data-complete-request-btn data-ticket-id="{{ req.id }}" style="width:100%;">
+        <button type="button" class="btn btn--sm btn--success" data-complete-request-btn data-ticket-id="{{ req.id }}" draggable="false" style="width:100%;">
           <i class="fa-solid fa-check"></i> Mark as Repaired
         </button>
       </div>
     {% elif req.status == 'in_progress' and req.user_can_repair %}
-      <div style="display:flex;gap:0.4rem;flex-direction:column;width:100%;">
-        <a href="{% url 'request_detail' req.id %}" class="btn btn--sm btn--secondary" data-open-ticket-btn style="width:100%;text-align:center;">
+      <div style="display:flex;gap:0.4rem;flex-direction:column;width:100%;" draggable="false">
+        <a href="{% url 'request_detail' req.id %}" class="btn btn--sm btn--secondary" data-open-ticket-btn draggable="false" style="width:100%;text-align:center;">
           <i class="fa-solid fa-arrow-up-right-from-square"></i> Open Ticket
         </a>
-        <button type="button" class="btn btn--sm btn--success" data-complete-request-btn data-ticket-id="{{ req.id }}" style="width:100%;">
+        <button type="button" class="btn btn--sm btn--success" data-complete-request-btn data-ticket-id="{{ req.id }}" draggable="false" style="width:100%;">
           <i class="fa-solid fa-check"></i> Mark as Repaired
         </button>
       </div>
     {% endif %}
   </div>
-  <div class="kanban-card__footer">
+  <div class="kanban-card__footer" draggable="false">
     <span class="badge badge--ghost" style="font-size:0.75rem;">Status</span>
-    <select class="quick-status-select" data-card-status-select data-ticket-id="{{ req.id }}">
+    <select class="quick-status-select" data-card-status-select data-ticket-id="{{ req.id }}" draggable="false">
       <option value="pending" {% if req.status == 'pending' or req.status == 'new' %}selected{% endif %}>New</option>
       <option value="in_progress" {% if req.status == 'in_progress' %}selected{% endif %}>In Progress</option>
       <option value="repaired" {% if req.status == 'repaired' or req.status == 'completed' %}selected{% endif %}>Repaired</option>

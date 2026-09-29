@@ -5,3 +5,7 @@ python-dotenv==1.2.3
 asgiref==3.11.1
 sqlparse==0.5.5
 tzdata==2026.2
+django-allauth==65.19.4
+requests==2.34.2
+PyJWT[crypto]==2.15.0
+

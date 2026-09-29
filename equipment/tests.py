@@ -164,3 +164,69 @@ class EquipmentTests(TestCase):
         response_maint = self.client.get(reverse('equipment_maintenance', kwargs={'pk': self.equipment.pk}), HTTP_ACCEPT='text/html')
         self.assertEqual(response_maint.status_code, 200)
         self.assertTemplateUsed(response_maint, 'equipment_maintenance.html')
+
+    def test_admin_equipment_add_auto_assigns_created_by(self):
+        from django.contrib.admin.sites import AdminSite
+        from equipment.admin import EquipmentAdmin
+        admin_user = User.objects.create_superuser(
+            username='admin@example.com',
+            email='admin@example.com',
+            password='password123',
+            first_name='AdminUser'
+        )
+        eq_admin = EquipmentAdmin(Equipment, AdminSite())
+        new_eq = Equipment(name='Admin Lathe', serial_number='ADM-100', status='active')
+
+        class DummyRequest:
+            user = admin_user
+
+        eq_admin.save_model(DummyRequest(), new_eq, None, change=False)
+        self.assertEqual(new_eq.created_by, admin_user)
+        self.assertTrue(Equipment.objects.filter(serial_number='ADM-100', created_by=admin_user).exists())
+
+    def test_admin_equipment_fields_exclude_created_by_on_add(self):
+        from django.contrib.admin.sites import AdminSite
+        from equipment.admin import EquipmentAdmin
+        eq_admin = EquipmentAdmin(Equipment, AdminSite())
+        fields_on_add = eq_admin.get_fields(None, obj=None)
+        self.assertNotIn('created_by', fields_on_add)
+
+        # When editing an existing object, created_by should be in readonly_fields
+        readonly_on_edit = eq_admin.get_readonly_fields(None, obj=self.equipment)
+        self.assertIn('created_by', readonly_on_edit)
+
+    def test_admin_equipment_change_preserves_created_by(self):
+        from django.contrib.admin.sites import AdminSite
+        from equipment.admin import EquipmentAdmin
+        another_admin = User.objects.create_superuser(
+            username='admin2@example.com',
+            email='admin2@example.com',
+            password='password123'
+        )
+        eq_admin = EquipmentAdmin(Equipment, AdminSite())
+        original_creator = self.equipment.created_by
+
+        class DummyRequest:
+            user = another_admin
+
+        self.equipment.name = 'Updated via Admin'
+        eq_admin.save_model(DummyRequest(), self.equipment, None, change=True)
+        self.equipment.refresh_from_db()
+        self.assertEqual(self.equipment.created_by, original_creator)
+        self.assertEqual(self.equipment.name, 'Updated via Admin')
+
+    def test_customer_cannot_create_equipment_api(self):
+        customer = User.objects.create_user(
+            username='cust@example.com',
+            email='cust@example.com',
+            password='password123',
+            user_type='customer'
+        )
+        self.client.login(username='cust@example.com', password='password123')
+        response = self.client.post(
+            reverse('equipment_list'),
+            data=json.dumps({'name': 'Customer Equip', 'serial_number': 'CUST-001'}),
+            content_type='application/json'
+        )
+        self.assertEqual(response.status_code, 403)
+
