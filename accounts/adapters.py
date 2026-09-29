@@ -7,10 +7,35 @@ User = get_user_model()
 class CustomSocialAccountAdapter(DefaultSocialAccountAdapter):
     """
     Custom social account adapter for GearGuard.
-    Ensures that any new user signing up via Google OAuth is strictly assigned
-    the 'customer' application role, while preserving existing user roles
-    (e.g., Technician) if an existing user links/authenticates via Google.
+    - If an existing user (Customer or Technician) logs in via Google with a matching email,
+      they are linked and logged in immediately, preserving their existing role with NO role selection.
+    - If this is a new Google signup, the user goes through role selection (SocialSignupForm)
+      to choose Customer or Technician, and the selected role is assigned on creation.
     """
+
+    def pre_social_login(self, request, sociallogin):
+        # If the social account is already linked to an existing user, is_existing is True
+        if sociallogin.is_existing:
+            return
+
+        # Check if an existing local user has the same email from Google
+        email = None
+        if sociallogin.email_addresses:
+            email = sociallogin.email_addresses[0].email
+        elif hasattr(sociallogin, 'account') and sociallogin.account.extra_data:
+            email = sociallogin.account.extra_data.get('email')
+
+        if email:
+            try:
+                existing_user = User.objects.get(email__iexact=email)
+                # Connect this socialaccount to the existing user so they log in immediately without role selection
+                sociallogin.connect(request, existing_user)
+            except User.DoesNotExist:
+                pass
+
+    def is_auto_signup_allowed(self, request, sociallogin):
+        # Return False for new social accounts so the user goes through the role selection signup form
+        return False
 
     def populate_user(self, request, sociallogin, data):
         user = super().populate_user(request, sociallogin, data)
@@ -33,17 +58,16 @@ class CustomSocialAccountAdapter(DefaultSocialAccountAdapter):
         if name:
             user.first_name = name
 
-
-        # For newly created users (no DB primary key yet), default role strictly to 'customer'
-        if not user.pk:
-            user.user_type = 'customer'
-
         return user
 
     def save_user(self, request, sociallogin, form=None):
         user = super().save_user(request, sociallogin, form)
-        # Ensure user_type is never empty or None for new social users
-        if not user.user_type:
+        if form and hasattr(form, 'cleaned_data') and 'user_type' in form.cleaned_data:
+            role = form.cleaned_data['user_type']
+            if role in ('customer', 'technician'):
+                user.user_type = role
+                user.save(update_fields=['user_type'])
+        elif not user.user_type:
             user.user_type = 'customer'
             user.save(update_fields=['user_type'])
         return user

@@ -300,6 +300,130 @@ class AccountsTests(TestCase):
         self.assertTrue(hasattr(jwt, 'decode'))
         self.assertTrue(hasattr(jwtkit, 'verify_and_decode'))
 
+    def test_social_signup_form_customer_role(self):
+        from accounts.forms import SocialSignupForm
+        from allauth.socialaccount.models import SocialLogin, SocialAccount
+        from django.test import RequestFactory
+        sa = SocialAccount(provider='google', uid='test_cust_uid', extra_data={'email': 'new_cust@example.com', 'name': 'New Cust'})
+        sl = SocialLogin(user=User(email='new_cust@example.com', username='new_cust@example.com'), account=sa)
+        form = SocialSignupForm(data={'email': 'new_cust@example.com', 'user_type': 'customer'}, sociallogin=sl)
+        self.assertTrue(form.is_valid(), form.errors)
+        rf = RequestFactory()
+        req = rf.post('/accounts/social/signup/')
+        req.session = {}
+        user = form.save(req)
+        self.assertEqual(user.user_type, 'customer')
+        self.assertTrue(user.is_customer_user)
+        self.assertFalse(user.is_technician_user)
+        user.delete()
+
+    def test_social_signup_form_technician_role(self):
+        from accounts.forms import SocialSignupForm
+        from allauth.socialaccount.models import SocialLogin, SocialAccount
+        from django.test import RequestFactory
+        sa = SocialAccount(provider='google', uid='test_tech_uid', extra_data={'email': 'new_tech@example.com', 'name': 'New Tech'})
+        sl = SocialLogin(user=User(email='new_tech@example.com', username='new_tech@example.com'), account=sa)
+        form = SocialSignupForm(data={'email': 'new_tech@example.com', 'user_type': 'technician'}, sociallogin=sl)
+        self.assertTrue(form.is_valid(), form.errors)
+        rf = RequestFactory()
+        req = rf.post('/accounts/social/signup/')
+        req.session = {}
+        user = form.save(req)
+        self.assertEqual(user.user_type, 'technician')
+        self.assertTrue(user.is_technician_user)
+        self.assertFalse(user.is_customer_user)
+        user.delete()
+
+    def test_social_signup_form_empty_role_rejected(self):
+        from accounts.forms import SocialSignupForm
+        from allauth.socialaccount.models import SocialLogin, SocialAccount
+        sa = SocialAccount(provider='google', uid='test_empty_uid', extra_data={'email': 'empty_role@example.com'})
+        sl = SocialLogin(user=User(email='empty_role@example.com', username='empty_role@example.com'), account=sa)
+        form = SocialSignupForm(data={'email': 'empty_role@example.com', 'user_type': ''}, sociallogin=sl)
+        self.assertFalse(form.is_valid())
+        self.assertIn('user_type', form.errors)
+
+    def test_social_signup_form_invalid_role_rejected(self):
+        from accounts.forms import SocialSignupForm
+        from allauth.socialaccount.models import SocialLogin, SocialAccount
+        sa = SocialAccount(provider='google', uid='test_invalid_uid', extra_data={'email': 'invalid_role@example.com'})
+        sl = SocialLogin(user=User(email='invalid_role@example.com', username='invalid_role@example.com'), account=sa)
+        for invalid_role in ['admin', 'manager', 'superuser', 'staff', 'other']:
+            form = SocialSignupForm(data={'email': 'invalid_role@example.com', 'user_type': invalid_role}, sociallogin=sl)
+            self.assertFalse(form.is_valid())
+            self.assertIn('user_type', form.errors)
+
+    def test_pre_social_login_existing_technician_preserves_role_without_signup(self):
+        from accounts.adapters import CustomSocialAccountAdapter
+        from allauth.socialaccount.models import SocialLogin, SocialAccount
+        from django.test import RequestFactory
+        existing_tech = User.objects.create_user(
+            username='existing_tech@example.com',
+            email='existing_tech@example.com',
+            password='password123',
+            user_type='technician'
+        )
+        adapter = CustomSocialAccountAdapter()
+        sa = SocialAccount(provider='google', uid='google_tech_uid', extra_data={'email': 'existing_tech@example.com'})
+        sl = SocialLogin(user=User(email='existing_tech@example.com'), account=sa)
+        rf = RequestFactory()
+        req = rf.get('/accounts/google/login/callback/')
+        req.user = existing_tech
+        req.session = {}
+
+        adapter.pre_social_login(req, sl)
+        self.assertTrue(sl.is_existing)
+        self.assertEqual(sl.user, existing_tech)
+        self.assertEqual(existing_tech.user_type, 'technician')
+        self.assertTrue(existing_tech.is_technician_user)
+
+    def test_pre_social_login_existing_customer_preserves_role_without_signup(self):
+        from accounts.adapters import CustomSocialAccountAdapter
+        from allauth.socialaccount.models import SocialLogin, SocialAccount
+        from django.test import RequestFactory
+        existing_cust = User.objects.create_user(
+            username='existing_cust@example.com',
+            email='existing_cust@example.com',
+            password='password123',
+            user_type='customer'
+        )
+        adapter = CustomSocialAccountAdapter()
+        sa = SocialAccount(provider='google', uid='google_cust_uid', extra_data={'email': 'existing_cust@example.com'})
+        sl = SocialLogin(user=User(email='existing_cust@example.com'), account=sa)
+        rf = RequestFactory()
+        req = rf.get('/accounts/google/login/callback/')
+        req.user = existing_cust
+        req.session = {}
+
+        adapter.pre_social_login(req, sl)
+        self.assertTrue(sl.is_existing)
+        self.assertEqual(sl.user, existing_cust)
+        self.assertEqual(existing_cust.user_type, 'customer')
+        self.assertTrue(existing_cust.is_customer_user)
+
+    def test_adapter_is_auto_signup_allowed_returns_false(self):
+        from accounts.adapters import CustomSocialAccountAdapter
+        from allauth.socialaccount.models import SocialLogin, SocialAccount
+        adapter = CustomSocialAccountAdapter()
+        sa = SocialAccount(provider='google', uid='new_uid', extra_data={'email': 'new_auto@example.com'})
+        sl = SocialLogin(user=User(email='new_auto@example.com'), account=sa)
+        self.assertFalse(adapter.is_auto_signup_allowed(None, sl))
+
+    def test_social_signup_template_renders_role_options(self):
+        from django.template.loader import render_to_string
+        from accounts.forms import SocialSignupForm
+        from allauth.socialaccount.models import SocialLogin, SocialAccount
+        sa = SocialAccount(provider='google', uid='template_test_uid', extra_data={'email': 'template_test@example.com'})
+        sl = SocialLogin(user=User(email='template_test@example.com', username='template_test@example.com'), account=sa)
+        form = SocialSignupForm(sociallogin=sl)
+        rendered = render_to_string('socialaccount/signup.html', {'form': form, 'account': sa})
+        self.assertIn('Complete Your Signup', rendered)
+        self.assertIn('Customer', rendered)
+        self.assertIn('Technician', rendered)
+        self.assertIn('value="customer"', rendered)
+        self.assertIn('value="technician"', rendered)
+
+
 
 
 

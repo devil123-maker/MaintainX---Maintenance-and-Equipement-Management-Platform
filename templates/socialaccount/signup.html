@@ -1,0 +1,258 @@
+{% load static %}
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Choose Your Role — GearGuard</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&family=Poppins:wght@600;700&display=swap" rel="stylesheet">
+  <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.5.1/css/all.min.css">
+  <link rel="stylesheet" href="{% static 'css/variables.css' %}" />
+  <link rel="stylesheet" href="{% static 'css/base.css' %}" />
+  <link rel="stylesheet" href="{% static 'css/components.css' %}" />
+  <link rel="stylesheet" href="{% static 'css/layout.css' %}" />
+  <script>
+    (function(){var t=localStorage.getItem('maintainx-theme');if(t)document.documentElement.setAttribute('data-theme',t);})();
+  </script>
+  <style>
+    .role-cards-container {
+      display: flex;
+      flex-direction: column;
+      gap: 1rem;
+      margin-bottom: 1.5rem;
+    }
+    .role-option-card {
+      display: flex;
+      align-items: flex-start;
+      gap: 1rem;
+      padding: 1.15rem 1.25rem;
+      background: var(--color-bg-elevated);
+      border: 2px solid var(--color-border);
+      border-radius: var(--radius-lg);
+      cursor: pointer;
+      transition: all var(--transition-fast);
+      position: relative;
+    }
+    .role-option-card:hover {
+      border-color: var(--color-primary);
+      background: var(--color-bg-muted);
+      transform: translateY(-2px);
+    }
+    .role-option-card.active {
+      border-color: var(--color-primary);
+      background: var(--color-bg-muted);
+      box-shadow: var(--shadow-sm);
+    }
+    .role-option-card input[type="radio"] {
+      margin-top: 0.25rem;
+      accent-color: var(--color-primary);
+      width: 1.15rem;
+      height: 1.15rem;
+      cursor: pointer;
+    }
+    .role-option-card__icon {
+      width: 40px;
+      height: 40px;
+      border-radius: var(--radius-md);
+      background: rgba(37, 99, 235, 0.1);
+      color: var(--color-primary);
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      font-size: 1.2rem;
+      flex-shrink: 0;
+    }
+    .role-option-card__info {
+      flex: 1;
+    }
+    .role-option-card__title {
+      font-weight: 600;
+      font-size: 1.05rem;
+      color: var(--color-text);
+      margin-bottom: 0.25rem;
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+    }
+    .role-option-card__desc {
+      font-size: 0.875rem;
+      color: var(--color-text-secondary);
+      line-height: 1.4;
+    }
+    .google-badge {
+      display: flex;
+      align-items: center;
+      gap: 0.75rem;
+      padding: 0.75rem 1rem;
+      background: var(--color-bg-muted);
+      border: 1px solid var(--color-border);
+      border-radius: var(--radius-md);
+      margin-bottom: 1.5rem;
+    }
+  </style>
+</head>
+<body>
+  <div class="login-page">
+    <aside class="login-brand">
+      <div class="brand-content">
+        <a href="{% url 'dashboard' %}" class="logo" style="color:#fff;margin-bottom:2rem">
+          <i class="fa-solid fa-shield-halved"></i> GearGuard
+        </a>
+        <div class="brand-illustration">
+          <div class="circle circle-1"></div>
+          <div class="circle circle-2"></div>
+          <div class="circle circle-3"></div>
+        </div>
+        <h2>Complete Your Signup</h2>
+        <p>Choose your role to get started with maintenance tracking, equipment management, and team collaboration.</p>
+        <div class="login-brand__stats">
+          <div class="stat-item">
+            <i class="fa-solid fa-shield-halved"></i>
+            <span>Secure</span>
+            <small>OAuth 2.0</small>
+          </div>
+          <div class="stat-item">
+            <i class="fa-solid fa-bolt"></i>
+            <span>Fast</span>
+            <small>One-click Setup</small>
+          </div>
+          <div class="stat-item">
+            <i class="fa-solid fa-users"></i>
+            <span>Flexible</span>
+            <small>Role Based</small>
+          </div>
+        </div>
+      </div>
+    </aside>
+
+    <main class="login-form-side">
+      <div style="position:absolute;top:1.5rem;right:1.5rem">
+        <button class="btn btn--ghost btn--icon theme-toggle" data-theme-toggle aria-label="Toggle theme">
+          <i class="fa-solid fa-moon" data-theme-icon></i>
+        </button>
+      </div>
+
+      <div class="card login-card" style="max-width: 480px;">
+        <div class="login-card__header">
+          <div class="login-card__icon">
+            <i class="fa-solid fa-user-check"></i>
+          </div>
+          <h1>Complete Your Signup</h1>
+          <p>Choose your GearGuard role</p>
+        </div>
+
+        {% if form.errors %}
+          <div class="message error">
+            {% for field in form %}
+              {% for error in field.errors %}
+                <div>{{ error }}</div>
+              {% endfor %}
+            {% endfor %}
+            {% for error in form.non_field_errors %}
+              <div>{{ error }}</div>
+            {% endfor %}
+          </div>
+        {% endif %}
+
+        <div class="google-badge">
+          <i class="fa-brands fa-google" style="color: #ea4335; font-size: 1.25rem;"></i>
+          <div style="overflow: hidden;">
+            <div style="font-size: 0.725rem; color: var(--color-text-secondary); text-transform: uppercase; font-weight: 600; letter-spacing: 0.05em;">Connected Google Account</div>
+            <div style="font-weight: 500; color: var(--color-text); font-size: 0.9rem; white-space: nowrap; text-overflow: ellipsis; overflow: hidden;">
+              {{ form.email.value|default:account.extra_data.email }}
+            </div>
+          </div>
+        </div>
+
+        <form method="post" action="{% url 'socialaccount_signup' %}">
+          {% csrf_token %}
+          
+          {# Ensure email from Google is sent through form validation #}
+          {{ form.email.as_hidden }}
+
+          <div class="role-cards-container">
+            <label class="role-option-card active" id="cardCustomer">
+              <input type="radio" name="user_type" value="customer" id="roleCustomer" checked>
+              <div class="role-option-card__icon">
+                <i class="fa-solid fa-user"></i>
+              </div>
+              <div class="role-option-card__info">
+                <div class="role-option-card__title">
+                  <span>Customer</span>
+                </div>
+                <div class="role-option-card__desc">
+                  I want to create maintenance requests and manage my equipment.
+                </div>
+              </div>
+            </label>
+
+            <label class="role-option-card" id="cardTechnician">
+              <input type="radio" name="user_type" value="technician" id="roleTechnician">
+              <div class="role-option-card__icon">
+                <i class="fa-solid fa-wrench"></i>
+              </div>
+              <div class="role-option-card__info">
+                <div class="role-option-card__title">
+                  <span>Technician</span>
+                </div>
+                <div class="role-option-card__desc">
+                  I want to handle maintenance requests and repair equipment.
+                </div>
+              </div>
+            </label>
+          </div>
+
+          <button type="submit" class="btn btn--primary" style="width:100%; height: 46px; font-size: 1rem; font-weight: 600;">
+            <i class="fa-solid fa-arrow-right"></i> Continue
+          </button>
+        </form>
+
+        <p class="login-card__footer">
+          Need to cancel? <a href="{% url 'login' %}">Back to Login</a>
+        </p>
+      </div>
+    </main>
+  </div>
+
+  <script src="{% static 'js/main.js' %}"></script>
+  <script>
+    document.addEventListener('DOMContentLoaded', function () {
+      const cardCustomer = document.getElementById('cardCustomer');
+      const cardTechnician = document.getElementById('cardTechnician');
+      const radioCustomer = document.getElementById('roleCustomer');
+      const radioTechnician = document.getElementById('roleTechnician');
+
+      function updateActiveState() {
+        if (radioCustomer && radioCustomer.checked) {
+          cardCustomer?.classList.add('active');
+          cardTechnician?.classList.remove('active');
+        } else if (radioTechnician && radioTechnician.checked) {
+          cardTechnician?.classList.add('active');
+          cardCustomer?.classList.remove('active');
+        }
+      }
+
+      radioCustomer?.addEventListener('change', updateActiveState);
+      radioTechnician?.addEventListener('change', updateActiveState);
+
+      cardCustomer?.addEventListener('click', function () {
+        if (radioCustomer) {
+          radioCustomer.checked = true;
+          updateActiveState();
+        }
+      });
+
+      cardTechnician?.addEventListener('click', function () {
+        if (radioTechnician) {
+          radioTechnician.checked = true;
+          updateActiveState();
+        }
+      });
+
+      updateActiveState();
+    });
+  </script>
+</body>
+</html>
