@@ -13,6 +13,32 @@ from equipment.models import Equipment
 from accounts.models import User
 
 
+def get_visible_requests(user):
+    """
+    Returns the queryset of MaintenanceRequest visible to the given user based on their role:
+    - Superuser / Staff / Admin / Manager: All requests.
+    - Technician: Requests belonging to their teams (member or leader), requests assigned to them, or requested by them.
+    - Customer: Only requests requested by them.
+    - Anonymous / Unauthenticated: Empty queryset.
+    """
+    if not user or not user.is_authenticated:
+        return MaintenanceRequest.objects.none()
+
+    if user.is_staff or user.is_superuser or getattr(user, 'user_type', None) in ['admin', 'manager']:
+        return MaintenanceRequest.objects.all()
+
+    if getattr(user, 'is_technician_user', False):
+        return MaintenanceRequest.objects.filter(
+            Q(assigned_team__members=user) |
+            Q(assigned_team__leader=user) |
+            Q(assigned_technician=user) |
+            Q(requested_by=user)
+        ).distinct()
+
+    return MaintenanceRequest.objects.filter(requested_by=user)
+
+
+
 @require_http_methods(["POST"])
 def request_join(request, pk):
     """
@@ -224,20 +250,7 @@ def request_list(request):
         type_filter = request.GET.get('request_type')
         my_requests = request.GET.get('my_requests')
         
-        user = request.user
-        if user.is_staff or user.is_superuser or user.user_type in ['admin', 'manager']:
-            requests = MaintenanceRequest.objects.all()
-        elif user.is_technician_user:
-            requests = MaintenanceRequest.objects.filter(
-                Q(assigned_team__members=user) |
-                Q(assigned_team__leader=user) |
-                Q(assigned_technician=user) |
-                Q(requested_by=user)
-            ).distinct()
-        elif user.is_customer_user:
-            requests = MaintenanceRequest.objects.filter(requested_by=user)
-        else:
-            requests = MaintenanceRequest.objects.filter(requested_by=user)
+        requests = get_visible_requests(request.user)
         
         if status_filter:
             requests = requests.filter(status=status_filter)
@@ -323,6 +336,10 @@ def request_detail(request, pk):
     maintenance_request = get_object_or_404(MaintenanceRequest, pk=pk)
     
     if request.method == 'GET':
+        visible_requests = get_visible_requests(request.user)
+        if not visible_requests.filter(pk=pk).exists():
+            from django.http import Http404
+            raise Http404("Maintenance request not found or not accessible.")
         data = {
             'id': maintenance_request.id,
             'title': maintenance_request.title,
@@ -571,7 +588,8 @@ def request_complete(request, pk):
 def history_list(request):
     if request.method == 'GET':
         request_id = request.GET.get('request_id')
-        history = MaintenanceHistory.objects.all()
+        visible_requests = get_visible_requests(request.user)
+        history = MaintenanceHistory.objects.filter(maintenance_request__in=visible_requests)
         
         if request_id:
             history = history.filter(maintenance_request_id=request_id)
@@ -587,9 +605,11 @@ def history_list(request):
         return JsonResponse({'history': data})
     
     elif request.method == 'POST':
+        visible_requests = get_visible_requests(request.user)
         data = json.loads(request.body)
+        maintenance_req = get_object_or_404(visible_requests, id=data['maintenance_request'])
         history = MaintenanceHistory.objects.create(
-            maintenance_request_id=data['maintenance_request'],
+            maintenance_request=maintenance_req,
             performed_by_id=data.get('performed_by'),
             notes=data['notes'],
             cost=data.get('cost'),
@@ -603,7 +623,8 @@ def history_list(request):
 
 @login_required
 def history_detail(request, pk):
-    history = get_object_or_404(MaintenanceHistory, pk=pk)
+    visible_requests = get_visible_requests(request.user)
+    history = get_object_or_404(MaintenanceHistory.objects.filter(maintenance_request__in=visible_requests), pk=pk)
     
     if request.method == 'GET':
         data = {
@@ -639,24 +660,64 @@ def history_detail(request, pk):
 @login_required
 def dashboard(request):
     if request.method == 'GET':
+        user = request.user
+        is_elevated = user.is_staff or user.is_superuser or user.user_type in ['admin', 'manager']
+        visible_requests = get_visible_requests(user)
+
         # Equipment statistics
         total_equipment = Equipment.objects.count()
         active_equipment = Equipment.objects.filter(status='active').count()
         maintenance_equipment = Equipment.objects.filter(status='maintenance').count()
         
-        # Maintenance request statistics
-        total_requests = MaintenanceRequest.objects.count()
-        pending_requests = MaintenanceRequest.objects.filter(status__in=['pending', 'new']).count()
-        in_progress_requests = MaintenanceRequest.objects.filter(status='in_progress').count()
-        completed_requests = MaintenanceRequest.objects.filter(status__in=['completed', 'repaired']).count()
+        # Maintenance request statistics (scoped to visible_requests)
+        total_requests = visible_requests.count()
+        pending_requests = visible_requests.filter(status__in=['pending', 'new']).count()
+        in_progress_requests = visible_requests.filter(status='in_progress').count()
+        completed_requests = visible_requests.filter(status__in=['completed', 'repaired']).count()
         
+        # Technician specific stats
+        available_requests_count = 0
+        my_active_requests_count = 0
+        my_completed_requests_count = 0
+        team_in_progress_count = 0
+        team_overdue_count = 0
+
+        if user.is_technician_user:
+            user_teams = user.teams.all() | user.led_teams.all()
+            available_requests_count = MaintenanceRequest.objects.filter(
+                assigned_team__in=user_teams,
+                assigned_technician__isnull=True,
+                status__in=['new', 'pending']
+            ).exclude(equipment__status='scrapped').count()
+
+            my_active_requests_count = MaintenanceRequest.objects.filter(
+                assigned_technician=user,
+                status='in_progress'
+            ).count()
+
+            my_completed_requests_count = MaintenanceRequest.objects.filter(
+                assigned_technician=user,
+                status__in=['completed', 'repaired']
+            ).count()
+
+            team_in_progress_count = MaintenanceRequest.objects.filter(
+                assigned_team__in=user_teams,
+                status='in_progress'
+            ).count()
+
+            team_open_reqs = MaintenanceRequest.objects.filter(
+                assigned_team__in=user_teams,
+                status__in=['new', 'pending', 'in_progress']
+            )
+            team_overdue_count = sum(1 for r in team_open_reqs if r.is_overdue)
+
         # Team & Worker statistics
-        total_teams = MaintenanceTeam.objects.count()
+        total_teams = MaintenanceTeam.objects.count() if is_elevated else (user.teams.count() + user.led_teams.count() if user.is_technician_user else 0)
         active_workers = User.objects.filter(is_active=True).count()
         
         # Recent requests
-        recent_requests = MaintenanceRequest.objects.select_related(
-            'equipment', 'requested_by', 'assigned_team'
+        recent_requests = visible_requests.select_related(
+            'equipment', 'requested_by', 'assigned_team', 'assigned_technician'
         ).order_by('-created_at')[:5]
         recent_data = [{
             'id': req.id,
@@ -664,8 +725,8 @@ def dashboard(request):
             'status': req.status,
             'priority': req.priority,
             'request_type': req.request_type,
-            'equipment_name': req.equipment.name,
-            'equipment_serial': req.equipment.serial_number,
+            'equipment_name': req.equipment.name if req.equipment else '',
+            'equipment_serial': req.equipment.serial_number if req.equipment else '',
             'requested_by_name': req.requested_by.first_name if req.requested_by else (req.requested_by.email if req.requested_by else ''),
             'team_name': req.assigned_team.name if req.assigned_team else '',
             'scheduled_date': req.scheduled_date,
@@ -673,8 +734,8 @@ def dashboard(request):
         } for req in recent_requests]
         
         # Urgent requests
-        urgent_requests = MaintenanceRequest.objects.select_related(
-            'equipment', 'requested_by', 'assigned_team'
+        urgent_requests = visible_requests.select_related(
+            'equipment', 'requested_by', 'assigned_team', 'assigned_technician'
         ).filter(
             priority='urgent', 
             status__in=['pending', 'new', 'in_progress']
@@ -685,8 +746,8 @@ def dashboard(request):
             'status': req.status,
             'priority': req.priority,
             'request_type': req.request_type,
-            'equipment_name': req.equipment.name,
-            'equipment_serial': req.equipment.serial_number,
+            'equipment_name': req.equipment.name if req.equipment else '',
+            'equipment_serial': req.equipment.serial_number if req.equipment else '',
             'requested_by_name': req.requested_by.first_name if req.requested_by else (req.requested_by.email if req.requested_by else ''),
             'team_name': req.assigned_team.name if req.assigned_team else '',
             'scheduled_date': req.scheduled_date,
@@ -705,6 +766,11 @@ def dashboard(request):
                     'pending': pending_requests,
                     'in_progress': in_progress_requests,
                     'completed': completed_requests,
+                    'available': available_requests_count,
+                    'my_active': my_active_requests_count,
+                    'my_completed': my_completed_requests_count,
+                    'team_in_progress': team_in_progress_count,
+                    'team_overdue': team_overdue_count,
                 },
                 'team_stats': {
                     'total': total_teams,
@@ -721,6 +787,11 @@ def dashboard(request):
             'pending_requests': pending_requests,
             'in_progress_requests': in_progress_requests,
             'completed_requests': completed_requests,
+            'available_requests_count': available_requests_count,
+            'my_active_requests_count': my_active_requests_count,
+            'my_completed_requests_count': my_completed_requests_count,
+            'team_in_progress_count': team_in_progress_count,
+            'team_overdue_count': team_overdue_count,
             'total_teams': total_teams,
             'active_workers': active_workers,
             'recent_requests': recent_requests,
@@ -736,19 +807,7 @@ def tickets_view(request):
     tab = request.GET.get('tab')
     user = request.user
 
-    if user.is_staff or user.is_superuser or user.user_type in ['admin', 'manager']:
-        requests = MaintenanceRequest.objects.all()
-    elif user.is_technician_user:
-        requests = MaintenanceRequest.objects.filter(
-            Q(assigned_team__members=user) |
-            Q(assigned_team__leader=user) |
-            Q(assigned_technician=user) |
-            Q(requested_by=user)
-        ).distinct()
-    elif user.is_customer_user:
-        requests = MaintenanceRequest.objects.filter(requested_by=user)
-    else:
-        requests = MaintenanceRequest.objects.filter(requested_by=user)
+    requests = get_visible_requests(user)
 
     if tab == 'available' and user.is_technician_user:
         requests = requests.filter(status__in=['new', 'pending'], assigned_technician__isnull=True).exclude(equipment__status='scrapped')
@@ -860,22 +919,35 @@ def create_ticket_view(request):
 
 @login_required
 def workers_view(request):
-    workers = User.objects.all()
-    teams = MaintenanceTeam.objects.all()
+    user = request.user
+    is_elevated = user.is_staff or user.is_superuser or user.user_type in ['admin', 'manager']
+    if user.is_customer_user and not is_elevated:
+        return HttpResponseForbidden("Permission denied. Customers cannot view the internal workers directory.")
+
+    if user.is_technician_user and not is_elevated:
+        user_teams = user.teams.all() | user.led_teams.all()
+        workers = User.objects.filter(Q(teams__in=user_teams) | Q(led_teams__in=user_teams) | Q(user_type='technician')).distinct()
+        teams = user_teams.distinct()
+    else:
+        workers = User.objects.all()
+        teams = MaintenanceTeam.objects.all()
+
     return render(request, 'workers.html', {'workers': workers, 'teams': teams})
 
 
 @login_required
 def analytics_view(request):
     if request.headers.get('Accept') == 'application/json' or request.GET.get('format') == 'json':
-        from django.db.models import Count, Avg, Q
+        user = request.user
+        is_elevated = user.is_staff or user.is_superuser or user.user_type in ['admin', 'manager']
+        visible_requests = get_visible_requests(user)
 
-        total_requests = MaintenanceRequest.objects.count()
-        completed_count = MaintenanceRequest.objects.filter(status__in=['completed', 'repaired']).count()
-        open_count = MaintenanceRequest.objects.filter(status__in=['pending', 'new', 'in_progress']).count()
-        scrap_count = MaintenanceRequest.objects.filter(status='scrap').count()
+        total_requests = visible_requests.count()
+        completed_count = visible_requests.filter(status__in=['completed', 'repaired']).count()
+        open_count = visible_requests.filter(status__in=['pending', 'new', 'in_progress']).count()
+        scrap_count = visible_requests.filter(status='scrap').count()
 
-        completed_reqs = MaintenanceRequest.objects.filter(status__in=['completed', 'repaired'])
+        completed_reqs = visible_requests.filter(status__in=['completed', 'repaired'])
         total_completed = completed_reqs.count()
         if total_completed > 0:
             on_time_count = sum(1 for r in completed_reqs if not r.is_overdue)
@@ -883,38 +955,55 @@ def analytics_view(request):
         else:
             sla_compliance = 100
 
-        avg_hours_data = MaintenanceRequest.objects.filter(
+        avg_hours_data = visible_requests.filter(
             status__in=['completed', 'repaired'],
             duration_hours__isnull=False
         ).aggregate(avg_h=Avg('duration_hours'))
         avg_resolution_hours = round(float(avg_hours_data['avg_h']), 1) if avg_hours_data['avg_h'] is not None else 0.0
 
-        team_stats = list(MaintenanceTeam.objects.annotate(
-            total_reqs=Count('assigned_requests'),
-            completed_reqs=Count('assigned_requests', filter=Q(assigned_requests__status__in=['completed', 'repaired']))
-        ).values('name', 'total_reqs', 'completed_reqs'))
+        if is_elevated:
+            team_stats = list(MaintenanceTeam.objects.annotate(
+                total_reqs=Count('assigned_requests'),
+                completed_reqs=Count('assigned_requests', filter=Q(assigned_requests__status__in=['completed', 'repaired']))
+            ).values('name', 'total_reqs', 'completed_reqs'))
+            category_stats = list(Equipment.objects.values('category').annotate(
+                equipment_count=Count('id'),
+                request_count=Count('maintenance_requests')
+            ).order_by('-request_count'))
+        elif user.is_technician_user:
+            user_teams = user.teams.all() | user.led_teams.all()
+            team_stats = list(user_teams.distinct().annotate(
+                total_reqs=Count('assigned_requests', filter=Q(assigned_requests__in=visible_requests)),
+                completed_reqs=Count('assigned_requests', filter=Q(assigned_requests__in=visible_requests, assigned_requests__status__in=['completed', 'repaired']))
+            ).values('name', 'total_reqs', 'completed_reqs'))
+            category_stats = list(Equipment.objects.filter(maintenance_requests__in=visible_requests).values('category').annotate(
+                equipment_count=Count('id', distinct=True),
+                request_count=Count('maintenance_requests', filter=Q(maintenance_requests__in=visible_requests), distinct=True)
+            ).order_by('-request_count'))
+        else:
+            team_stats = []
+            category_stats = list(Equipment.objects.filter(maintenance_requests__in=visible_requests).values('category').annotate(
+                equipment_count=Count('id', distinct=True),
+                request_count=Count('maintenance_requests', filter=Q(maintenance_requests__in=visible_requests), distinct=True)
+            ).order_by('-request_count'))
 
-        category_stats = list(Equipment.objects.values('category').annotate(
-            equipment_count=Count('id'),
-            request_count=Count('maintenance_requests')
-        ).order_by('-request_count'))
         for item in category_stats:
             if not item['category']:
                 item['category'] = 'General'
 
-        type_stats = list(MaintenanceRequest.objects.values('request_type').annotate(
+        type_stats = list(visible_requests.values('request_type').annotate(
             count=Count('id')
         ))
 
-        status_stats = list(MaintenanceRequest.objects.values('status').annotate(
+        status_stats = list(visible_requests.values('status').annotate(
             count=Count('id')
         ))
 
-        priority_stats = list(MaintenanceRequest.objects.values('priority').annotate(
+        priority_stats = list(visible_requests.values('priority').annotate(
             count=Count('id')
         ))
 
-        tech_stats_raw = list(MaintenanceRequest.objects.values('assigned_technician__first_name', 'assigned_technician__username').annotate(
+        tech_stats_raw = list(visible_requests.values('assigned_technician__first_name', 'assigned_technician__username').annotate(
             count=Count('id')
         ))
         tech_stats = []
@@ -932,8 +1021,8 @@ def analytics_view(request):
         monthly_trends = []
         month_names = ["Jan", "Feb", "Mar", "Apr", "May", "Jun", "Jul", "Aug", "Sep", "Oct", "Nov", "Dec"]
         for y, m in months:
-            opened = MaintenanceRequest.objects.filter(created_at__year=y, created_at__month=m).count()
-            resolved = MaintenanceRequest.objects.filter(completed_date__year=y, completed_date__month=m, status__in=['completed', 'repaired']).count()
+            opened = visible_requests.filter(created_at__year=y, created_at__month=m).count()
+            resolved = visible_requests.filter(completed_date__year=y, completed_date__month=m, status__in=['completed', 'repaired']).count()
             monthly_trends.append({
                 'month': f"{month_names[m-1]}",
                 'opened': opened,
@@ -968,7 +1057,8 @@ def settings_view(request):
 
 @login_required
 def calendar_view(request):
-    preventive_requests = MaintenanceRequest.objects.filter(
+    visible_requests = get_visible_requests(request.user)
+    preventive_requests = visible_requests.filter(
         request_type='preventive',
         scheduled_date__isnull=False
     ).select_related('equipment', 'assigned_team', 'assigned_technician')
@@ -978,9 +1068,9 @@ def calendar_view(request):
             'id': req.id,
             'title': req.title,
             'description': req.description,
-            'equipment_id': req.equipment.id,
-            'equipment_name': req.equipment.name,
-            'equipment_serial': req.equipment.serial_number,
+            'equipment_id': req.equipment.id if req.equipment else None,
+            'equipment_name': req.equipment.name if req.equipment else '',
+            'equipment_serial': req.equipment.serial_number if req.equipment else '',
             'assigned_team_id': req.assigned_team.id if req.assigned_team else None,
             'team_name': req.assigned_team.name if req.assigned_team else '',
             'assigned_technician_id': req.assigned_technician.id if req.assigned_technician else None,
@@ -1007,4 +1097,5 @@ def calendar_view(request):
         'technicians': technicians,
     }
     return render(request, 'calendar.html', context)
+
 

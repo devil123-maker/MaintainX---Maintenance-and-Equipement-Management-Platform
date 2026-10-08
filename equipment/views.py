@@ -154,16 +154,22 @@ def equipment_detail(request, pk):
 @login_required
 def equipment_maintenance(request, pk):
     equipment = get_object_or_404(Equipment, pk=pk)
-    requests_qs = equipment.maintenance_requests.select_related('assigned_team', 'assigned_technician', 'equipment').order_by('-created_at')
+    from maintenance.views import get_visible_requests
+    visible_requests = get_visible_requests(request.user)
+    requests_qs = equipment.maintenance_requests.filter(id__in=visible_requests).select_related('assigned_team', 'assigned_technician', 'equipment').order_by('-created_at')
     
+    visible_total_count = requests_qs.count()
+    visible_open_count = requests_qs.filter(status__in=['new', 'pending', 'in_progress']).count()
+    latest_req = requests_qs.first()
+
     if request.headers.get('Accept') == 'application/json' or request.GET.get('format') == 'json':
         data = {
             'equipment_id': equipment.id,
             'equipment_name': equipment.name,
             'equipment_serial': equipment.serial_number,
             'status': equipment.status,
-            'total_requests': equipment.maintenance_count,
-            'open_requests': equipment.open_maintenance_count,
+            'total_requests': visible_total_count,
+            'open_requests': visible_open_count,
             'requests': [{
                 'id': req.id,
                 'title': req.title,
@@ -180,8 +186,9 @@ def equipment_maintenance(request, pk):
     context = {
         'equipment': equipment,
         'maintenance_requests': requests_qs,
-        'total_count': equipment.maintenance_count,
-        'open_count': equipment.open_maintenance_count,
-        'latest_request': equipment.latest_maintenance_request
+        'total_count': visible_total_count,
+        'open_count': visible_open_count,
+        'latest_request': latest_req
     }
     return render(request, 'equipment_maintenance.html', context)
+

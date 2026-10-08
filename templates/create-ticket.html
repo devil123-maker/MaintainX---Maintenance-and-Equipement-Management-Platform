@@ -31,7 +31,9 @@
         {% if not user.is_technician_user %}
           <a href="{% url 'create_ticket' %}" class="sidebar__link is-active"><i class="fa-solid fa-plus"></i> Create Ticket</a>
         {% endif %}
-        <a href="{% url 'workers' %}" class="sidebar__link"><i class="fa-solid fa-users"></i> Workers</a>
+        {% if not user.is_customer_user %}
+          <a href="{% url 'workers' %}" class="sidebar__link"><i class="fa-solid fa-users"></i> Workers</a>
+        {% endif %}
         <a href="{% url 'analytics' %}" class="sidebar__link"><i class="fa-solid fa-chart-line"></i> Analytics</a>
         <a href="{% url 'settings' %}" class="sidebar__link"><i class="fa-solid fa-gear"></i> Settings</a>
       </nav>

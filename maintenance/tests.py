@@ -1451,4 +1451,209 @@ class MaintenanceWorkflowConcurrencyTests(TransactionTestCase):
         self.assertIn(req.assigned_technician, [self.tech_a, self.tech_b])
 
 
+class RoleBasedDataSeparationTests(TestCase):
+    def setUp(self):
+        self.client = Client()
+        
+        # Customers
+        self.cust_1 = User.objects.create_user(
+            username='cust1@gearguard.local',
+            email='cust1@gearguard.local',
+            password='Password123!',
+            first_name='CustomerOne',
+            user_type='customer'
+        )
+        self.cust_2 = User.objects.create_user(
+            username='cust2@gearguard.local',
+            email='cust2@gearguard.local',
+            password='Password123!',
+            first_name='CustomerTwo',
+            user_type='customer'
+        )
+        
+        # Technicians
+        self.tech_alpha = User.objects.create_user(
+            username='tech_alpha@gearguard.local',
+            email='tech_alpha@gearguard.local',
+            password='Password123!',
+            first_name='TechAlpha',
+            user_type='technician'
+        )
+        self.tech_beta = User.objects.create_user(
+            username='tech_beta@gearguard.local',
+            email='tech_beta@gearguard.local',
+            password='Password123!',
+            first_name='TechBeta',
+            user_type='technician'
+        )
+
+        # Admin / Superuser
+        self.admin_user = User.objects.create_superuser(
+            username='admin@gearguard.local',
+            email='admin@gearguard.local',
+            password='Password123!',
+            first_name='AdminUser'
+        )
+        
+        # Teams
+        self.team_alpha = MaintenanceTeam.objects.create(name='Team Alpha', leader=self.tech_alpha)
+        self.team_alpha.members.add(self.tech_alpha)
+        
+        self.team_beta = MaintenanceTeam.objects.create(name='Team Beta', leader=self.tech_beta)
+        self.team_beta.members.add(self.tech_beta)
+
+        # Equipment
+        self.equipment_alpha = Equipment.objects.create(
+            name='Industrial CNC Alpha',
+            serial_number='CNC-ALPHA-001',
+            status='active',
+            maintenance_team=self.team_alpha,
+            created_by=self.admin_user
+        )
+        self.equipment_beta = Equipment.objects.create(
+            name='Industrial Lathe Beta',
+            serial_number='LATHE-BETA-001',
+            status='active',
+            maintenance_team=self.team_beta,
+            created_by=self.admin_user
+        )
+
+        # Requests
+        self.req_cust1_alpha = MaintenanceRequest.objects.create(
+            title='Customer 1 CNC Issue',
+            description='Issue reported by Customer 1',
+            equipment=self.equipment_alpha,
+            requested_by=self.cust_1,
+            assigned_team=self.team_alpha,
+            status='new',
+            priority='high',
+            request_type='corrective'
+        )
+        self.req_cust2_beta = MaintenanceRequest.objects.create(
+            title='Customer 2 Beta Issue',
+            description='Issue reported by Customer 2',
+            equipment=self.equipment_beta,
+            requested_by=self.cust_2,
+            assigned_team=self.team_beta,
+            status='new',
+            priority='medium',
+            request_type='corrective'
+        )
+        self.req_cust1_preventive = MaintenanceRequest.objects.create(
+            title='Customer 1 Preventive Lubrication',
+            description='Preventive task',
+            equipment=self.equipment_alpha,
+            requested_by=self.cust_1,
+            assigned_team=self.team_alpha,
+            status='new',
+            priority='low',
+            request_type='preventive',
+            scheduled_date='2026-10-15'
+        )
+
+    def test_customer_cannot_see_other_customer_tickets_in_list(self):
+        self.client.login(username='cust1@gearguard.local', password='Password123!')
+        resp = self.client.get(reverse('request_list'))
+        self.assertEqual(resp.status_code, 200)
+        req_ids = [r['id'] for r in resp.json()['requests']]
+        self.assertIn(self.req_cust1_alpha.id, req_ids)
+        self.assertIn(self.req_cust1_preventive.id, req_ids)
+        self.assertNotIn(self.req_cust2_beta.id, req_ids)
+
+    def test_customer_cannot_view_other_customer_ticket_detail(self):
+        self.client.login(username='cust1@gearguard.local', password='Password123!')
+        # Own ticket -> 200
+        resp_own = self.client.get(reverse('request_detail', kwargs={'pk': self.req_cust1_alpha.id}))
+        self.assertEqual(resp_own.status_code, 200)
+        
+        # Other customer's ticket -> 404
+        resp_other = self.client.get(reverse('request_detail', kwargs={'pk': self.req_cust2_beta.id}))
+        self.assertEqual(resp_other.status_code, 404)
+
+    def test_customer_dashboard_counts_scoped(self):
+        self.client.login(username='cust1@gearguard.local', password='Password123!')
+        resp = self.client.get(reverse('dashboard'), HTTP_ACCEPT='application/json')
+        self.assertEqual(resp.status_code, 200)
+        stats = resp.json()['request_stats']
+        # Cust 1 has 2 requests total (req_cust1_alpha and req_cust1_preventive)
+        self.assertEqual(stats['total'], 2)
+        self.assertEqual(stats['pending'], 2)
+        self.assertEqual(stats['completed'], 0)
+
+    def test_customer_calendar_scoped(self):
+        self.client.login(username='cust1@gearguard.local', password='Password123!')
+        resp = self.client.get(reverse('calendar'), HTTP_ACCEPT='application/json')
+        self.assertEqual(resp.status_code, 200)
+        events = resp.json()['events']
+        event_ids = [e['id'] for e in events]
+        self.assertIn(self.req_cust1_preventive.id, event_ids)
+
+    def test_customer_analytics_scoped(self):
+        self.client.login(username='cust1@gearguard.local', password='Password123!')
+        resp = self.client.get(reverse('analytics'), HTTP_ACCEPT='application/json')
+        self.assertEqual(resp.status_code, 200)
+        data = resp.json()
+        self.assertEqual(data['kpis']['total_requests'], 2)
+
+    def test_customer_workers_view_forbidden(self):
+        self.client.login(username='cust1@gearguard.local', password='Password123!')
+        resp = self.client.get(reverse('workers'))
+        self.assertEqual(resp.status_code, 403)
+
+    def test_customer_equipment_maintenance_scoped(self):
+        self.client.login(username='cust1@gearguard.local', password='Password123!')
+        resp = self.client.get(reverse('equipment_maintenance', kwargs={'pk': self.equipment_alpha.id}), HTTP_ACCEPT='application/json')
+        self.assertEqual(resp.status_code, 200)
+        data = resp.json()
+        self.assertEqual(data['total_requests'], 2)
+        req_ids = [r['id'] for r in data['requests']]
+        self.assertIn(self.req_cust1_alpha.id, req_ids)
+        self.assertNotIn(self.req_cust2_beta.id, req_ids)
+
+    def test_technician_team_isolation(self):
+        # Tech Alpha should see Team Alpha requests, NOT Team Beta
+        self.client.login(username='tech_alpha@gearguard.local', password='Password123!')
+        resp = self.client.get(reverse('request_list'))
+        self.assertEqual(resp.status_code, 200)
+        req_ids = [r['id'] for r in resp.json()['requests']]
+        self.assertIn(self.req_cust1_alpha.id, req_ids)
+        self.assertIn(self.req_cust1_preventive.id, req_ids)
+        self.assertNotIn(self.req_cust2_beta.id, req_ids)
+
+        # Tech Alpha accessing Team Beta detail -> 404
+        detail_resp = self.client.get(reverse('request_detail', kwargs={'pk': self.req_cust2_beta.id}))
+        self.assertEqual(detail_resp.status_code, 404)
+
+    def test_technician_dashboard_stats(self):
+        self.client.login(username='tech_alpha@gearguard.local', password='Password123!')
+        resp = self.client.get(reverse('dashboard'), HTTP_ACCEPT='application/json')
+        self.assertEqual(resp.status_code, 200)
+        stats = resp.json()['request_stats']
+        # Available requests for Team Alpha (unassigned new requests)
+        self.assertEqual(stats['available'], 2)
+        self.assertEqual(stats['my_active'], 0)
+
+    def test_technician_workers_view_allowed(self):
+        self.client.login(username='tech_alpha@gearguard.local', password='Password123!')
+        resp = self.client.get(reverse('workers'))
+        self.assertEqual(resp.status_code, 200)
+        self.assertTemplateUsed(resp, 'workers.html')
+
+    def test_admin_global_visibility(self):
+        self.client.login(username='admin@gearguard.local', password='Password123!')
+        resp = self.client.get(reverse('request_list'))
+        self.assertEqual(resp.status_code, 200)
+        req_ids = [r['id'] for r in resp.json()['requests']]
+        self.assertIn(self.req_cust1_alpha.id, req_ids)
+        self.assertIn(self.req_cust2_beta.id, req_ids)
+        self.assertIn(self.req_cust1_preventive.id, req_ids)
+
+        # Admin can view both ticket details
+        resp_1 = self.client.get(reverse('request_detail', kwargs={'pk': self.req_cust1_alpha.id}))
+        self.assertEqual(resp_1.status_code, 200)
+        resp_2 = self.client.get(reverse('request_detail', kwargs={'pk': self.req_cust2_beta.id}))
+        self.assertEqual(resp_2.status_code, 200)
+
+
+
 
